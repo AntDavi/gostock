@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Hanken_Grotesk } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DatasetProvider } from "@/ui/DatasetProvider";
-import { Nav } from "@/ui/Nav";
+import { AppShell } from "@/ui/AppShell";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const hanken = Hanken_Grotesk({
+  variable: "--font-hanken",
   subsets: ["latin"],
 });
 
@@ -22,12 +22,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="pt-BR" className={`${hanken.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
         <TooltipProvider>
           <DatasetProvider>
-            <Nav />
-            <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">{children}</main>
+            <AppShell>{children}</AppShell>
           </DatasetProvider>
         </TooltipProvider>
       </body>

@@ -21,7 +21,7 @@ export function BudgetCurveChart({ points, budget, target }: { points: BudgetPoi
         <XAxis type="number" dataKey="budget" domain={[0, "dataMax"]} ticks={xTicks} tickLine={false} axisLine={false} tickFormatter={(v: number) => brl(v, true)} />
         <YAxis domain={[minY, 1]} ticks={yTicks} tickLine={false} axisLine={false} width={44} tickFormatter={(v: number) => pct(v, 0)} />
         <ReferenceLine y={target} strokeDasharray="4 4" stroke="var(--color-muted-foreground)" label={{ value: `meta ${pct(target, 0)}`, position: "insideTopLeft", fontSize: 11, fill: "var(--color-muted-foreground)" }} />
-        <ReferenceLine x={budget} strokeDasharray="4 4" stroke="var(--color-muted-foreground)" />
+        <ReferenceLine x={budget} strokeDasharray="4 4" stroke="var(--color-primary)" strokeOpacity={0.6} />
         <ChartTooltip
           cursor={false}
           content={({ active, payload }) => {
@@ -36,7 +36,7 @@ export function BudgetCurveChart({ points, budget, target }: { points: BudgetPoi
           }}
         />
         <Line dataKey="expectedFillRate" type="linear" isAnimationActive={false} stroke="var(--color-expectedFillRate)" strokeWidth={2} dot={{ r: 3 }} />
-        <ReferenceDot x={plan.budget} y={plan.expectedFillRate} r={5} fill="var(--color-foreground)" stroke="var(--color-background)" strokeWidth={2} />
+        <ReferenceDot x={plan.budget} y={plan.expectedFillRate} r={6} fill="var(--color-primary)" stroke="var(--color-card)" strokeWidth={2} />
       </LineChart>
     </ChartContainer>
   );

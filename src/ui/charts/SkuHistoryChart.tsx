@@ -23,12 +23,14 @@ interface Props {
   referenceDate: ISODate;
   campaigns: Campaign[];
   stockoutDate: ISODate | null;
+  /** Versão menor para o painel lateral: sem legenda. */
+  compact?: boolean;
 }
 
 const short = (c: Campaign) => (c.id === "bf" ? "BF" : c.name);
 
 /** Vendas e estoque com as campanhas do ano passado sombreadas e a projeção até o fim da janela. */
-export function SkuHistoryChart({ history, period, projection, start, referenceDate, campaigns, stockoutDate }: Props) {
+export function SkuHistoryChart({ history, period, projection, start, referenceDate, campaigns, stockoutDate, compact }: Props) {
   const x = (d: ISODate) => diffDays(start, d);
   const data = [
     ...history.map((p) => ({ x: x(p.date), date: p.date, units: p.units, onHand: Math.max(0, p.onHand) })),
@@ -36,7 +38,7 @@ export function SkuHistoryChart({ history, period, projection, start, referenceD
   ];
   const max = data.length ? data[data.length - 1].x : 0;
   return (
-    <ChartContainer config={config} className="aspect-auto h-72 w-full">
+    <ChartContainer config={config} className={compact ? "aspect-auto h-48 w-full" : "aspect-auto h-72 w-full"}>
       <ComposedChart data={data} margin={{ left: 4, right: 12, top: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis
@@ -51,7 +53,7 @@ export function SkuHistoryChart({ history, period, projection, start, referenceD
         <YAxis yAxisId="stock" tickLine={false} axisLine={false} width={48} tickFormatter={(v: number) => intBR(v)} />
         <YAxis yAxisId="sales" orientation="right" tickLine={false} axisLine={false} width={40} tickFormatter={(v: number) => intBR(v)} />
         {campaigns.flatMap((c) => [
-          <ReferenceArea key={`${c.id}-ly`} x1={x(c.lastYearStart)} x2={x(c.lastYearEnd)} fill="var(--color-muted-foreground)" fillOpacity={0.12} yAxisId="stock" label={{ value: short(c), position: "insideTop", fontSize: 10, fill: "var(--color-muted-foreground)" }} />,
+          x(c.lastYearEnd) < 0 ? null : <ReferenceArea key={`${c.id}-ly`} x1={x(c.lastYearStart)} x2={x(c.lastYearEnd)} fill="var(--color-muted-foreground)" fillOpacity={0.12} yAxisId="stock" label={{ value: short(c), position: "insideTop", fontSize: 10, fill: "var(--color-muted-foreground)" }} />,
           <ReferenceArea key={`${c.id}-ty`} x1={x(c.start)} x2={x(c.end)} fill="var(--color-muted-foreground)" fillOpacity={0.12} yAxisId="stock" label={{ value: short(c), position: "insideTop", fontSize: 10, fill: "var(--color-muted-foreground)" }} />,
         ])}
         <ReferenceLine yAxisId="stock" x={x(referenceDate)} stroke="var(--color-muted-foreground)" strokeDasharray="3 3" label={{ value: "hoje", position: "insideTopRight", fontSize: 10, fill: "var(--color-muted-foreground)" }} />
@@ -74,7 +76,7 @@ export function SkuHistoryChart({ history, period, projection, start, referenceD
         <Bar yAxisId="sales" dataKey="units" fill="var(--color-units)" fillOpacity={0.6} barSize={period === "semana" ? 4 : 1} isAnimationActive={false} />
         <Line yAxisId="stock" dataKey="onHand" stroke="var(--color-onHand)" strokeWidth={1.5} dot={false} isAnimationActive={false} connectNulls={false} />
         <Line yAxisId="stock" dataKey="projected" stroke="var(--color-projected)" strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-        <ChartLegend content={<ChartLegendContent />} />
+        {!compact && <ChartLegend content={<ChartLegendContent />} />}
       </ComposedChart>
     </ChartContainer>
   );

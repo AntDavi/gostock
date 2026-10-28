@@ -60,7 +60,7 @@ export function EditLineDialog({ line, sku, dataset, config, onClose, onSave }: 
             <Input id="edit-date" type="date" min={config.windowStart} max={config.windowEnd} value={date} onChange={(e) => setDate(e.target.value)} aria-invalid={errors.some((x) => x.code === "WINDOW" || x.code === "BAD_DATE")} />
           </div>
           {errors.length > 0 ? (
-            <ul className="space-y-1 text-sm text-danger" role="alert">
+            <ul className="space-y-1 text-sm text-danger-ink" role="alert">
               {errors.map((e) => (
                 <li key={e.code}>{e.message}</li>
               ))}

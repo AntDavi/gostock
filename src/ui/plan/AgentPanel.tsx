@@ -1,23 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { BotIcon, Loader2Icon, RotateCcwIcon, TriangleAlertIcon } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useEffect, useState } from "react";
+import { BotIcon, ChevronDownIcon, Loader2Icon, RotateCcwIcon, TriangleAlertIcon, XIcon } from "lucide-react";
+import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import type { AgentResult } from "@/agent/run";
 import type { AgentState } from "@/agent/session";
-import { DEFAULT_REQUEST } from "@/agent/prompt";
-import { stripForAgent } from "@/core/pipeline";
-import type { Dataset } from "@/core/types";
+import { summarizeChanges } from "@/core/plan/risk";
+import { Notice } from "../kit";
+
+export type AgentRun = { status: "idle" } | { status: "running"; started: number } | { status: "error"; message: string };
 
 const TOOL_LABEL: Record<string, string> = {
   resumo_plano: "Leu o resumo do plano",
   listar_casos_criticos: "Listou os casos críticos",
   consultar_sku: "Consultou um SKU",
-  aplicar_ajustes: "Aplicou ajustes",
+  aplicar_ajustes: "Aplicou ajustes em lote",
   alterar_quantidade: "Alterou quantidade",
   alterar_emissao: "Alterou data de emissão",
   remover_linha: "Removeu linha",
@@ -28,164 +26,6 @@ const TOOL_LABEL: Record<string, string> = {
   finalizar: "Finalizou a revisão",
 };
 
-interface Props {
-  dataset: Dataset;
-  state: AgentState;
-  lastRun: { message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] } | null;
-  revised: boolean;
-  autoStart: boolean;
-  onResult(r: AgentResult): void;
-  onReset(): void;
-}
-
-export function AgentPanel({ dataset, state, lastRun, revised, autoStart, onResult, onReset }: Props) {
-  const [message, setMessage] = useState("");
-  const [running, setRunning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
-
-  const run = async (text: string) => {
-    setRunning(true);
-    setError(null);
-    setElapsed(0);
-    try {
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dataset: dataset.source === "upload" ? stripForAgent(dataset) : undefined, state, message: text || DEFAULT_REQUEST }),
-      });
-      const r = (await res.json()) as AgentResult;
-      if (!r.ok) setError(r.error ?? "Agente indisponível. Exibindo o plano atual.");
-      onResult(r);
-    } catch {
-      setError("Não foi possível falar com o agente. O plano atual continua valendo.");
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!running) return;
-    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, [running]);
-
-  useEffect(() => {
-    if (!autoStart || started.current) return;
-    // Marca dentro do timeout: no modo estrito o efeito roda duas vezes e o primeiro timeout é cancelado.
-    const t = setTimeout(() => {
-      started.current = true;
-      void run("");
-    }, 0);
-    return () => clearTimeout(t);
-    // Dispara uma vez ao abrir com ?auto=1.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart]);
-
-  const changes = state.changes;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <BotIcon className="size-4" /> Revisão do agente
-        </CardTitle>
-        <CardDescription>
-          O código monta o plano base; o agente julga os casos críticos (orçamento, lead time instável antes da campanha, POs atrasados) e só altera o plano por ferramentas que validam as regras.
-        </CardDescription>
-        {revised && !running && (
-          <CardAction>
-            <Button variant="ghost" size="sm" onClick={onReset}>
-              <RotateCcwIcon data-icon="inline-start" /> Voltar ao plano base
-            </Button>
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <form
-          className="flex flex-col gap-2 sm:flex-row sm:items-start"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(message.trim());
-          }}
-        >
-          <Textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={`Pedido livre (opcional). Padrão: "${DEFAULT_REQUEST}"`}
-            aria-label="Pedido ao agente"
-            rows={2}
-            maxLength={2000}
-            className="min-h-0 flex-1"
-            disabled={running}
-          />
-          <Button type="submit" disabled={running}>
-            {running ? <Loader2Icon className="animate-spin" data-icon="inline-start" /> : <BotIcon data-icon="inline-start" />}
-            {running ? `Revisando… ${elapsed}s` : revised ? "Pedir nova revisão" : "Pedir revisão ao agente"}
-          </Button>
-        </form>
-
-        {running && <p className="text-sm text-muted-foreground">O agente está lendo o plano e os casos críticos. Costuma levar de 20 a 60 segundos.</p>}
-
-        {error && (
-          <Alert variant="destructive">
-            <TriangleAlertIcon />
-            <AlertTitle>Agente indisponível</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {lastRun && !running && (
-          <div className="space-y-3">
-            <div className="rounded-lg bg-muted/60 p-3 text-sm whitespace-pre-line">{lastRun.message}</div>
-            {lastRun.unverified.length > 0 && (
-              <Alert>
-                <TriangleAlertIcon />
-                <AlertTitle>Números não verificados</AlertTitle>
-                <AlertDescription>
-                  Estes números do resumo não vieram de nenhuma ferramenta e podem estar errados: {lastRun.unverified.join(", ")}.
-                </AlertDescription>
-              </Alert>
-            )}
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">Passos do agente ({lastRun.steps.length})</summary>
-              <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-muted-foreground">
-                {lastRun.steps.map((s, i) => (
-                  <li key={i}>
-                    {TOOL_LABEL[s.tool] ?? s.tool}
-                    {!s.ok && <span className="text-danger"> (recusado pela validação)</span>}
-                  </li>
-                ))}
-              </ol>
-            </details>
-          </div>
-        )}
-
-        {changes.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">O que o agente mudou ({changes.length})</h3>
-            <ul className="divide-y rounded-lg ring-1 ring-foreground/10">
-              {changes.map((c) => (
-                <li key={c.id} className="space-y-1 p-3 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{c.sku}</span>
-                    <Badge variant="secondary">{KIND_LABEL[c.kind] ?? c.kind}</Badge>
-                  </div>
-                  <div className="text-muted-foreground">
-                    <span className="line-through decoration-muted-foreground/50">{c.before}</span> → <span className="text-foreground">{c.after}</span>
-                  </div>
-                  <div className="text-muted-foreground">{c.reason}</div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 const KIND_LABEL: Record<string, string> = {
   quantity: "quantidade",
   emission: "data de emissão",
@@ -195,3 +35,149 @@ const KIND_LABEL: Record<string, string> = {
   markdown: "liquidação",
   scenario: "cenário",
 };
+
+interface Props {
+  state: AgentState;
+  revised: boolean;
+  run: AgentRun;
+  lastRun: { message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] } | null;
+  onlyChanged: boolean;
+  onToggleOnlyChanged(): void;
+  onRun(): void;
+  onReset(): void;
+  onDismissError(): void;
+}
+
+function Elapsed({ started }: { started: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <>{Math.max(0, Math.round((now - started) / 1000))} s</>;
+}
+
+/** Revisão do agente: o que fez (resumo gerado pelo código), antes → depois de cada mudança e os estados da chamada. */
+export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggleOnlyChanged, onRun, onReset, onDismissError }: Props) {
+  const [open, setOpen] = useState(false);
+  const changes = state.changes;
+  const partial = lastRun?.message.startsWith("Revisão parcial");
+
+  return (
+    <section aria-label="Revisão do agente" aria-live="polite" className="rounded-2xl bg-accent/60 ring-1 ring-primary/10">
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+        <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground" aria-hidden>
+          {run.status === "running" ? <Loader2Icon className="size-5 animate-spin" /> : <BotIcon className="size-5" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          {run.status === "running" ? (
+            <>
+              <h2 className="font-semibold">
+                O agente está revisando o plano… <Elapsed started={run.started} />
+              </h2>
+              <p className="text-sm text-foreground/75">Lê o resumo e os casos críticos e só altera o plano por ferramentas que validam as regras. Costuma levar de 20 a 60 segundos.</p>
+            </>
+          ) : revised ? (
+            <>
+              <h2 className="font-semibold">
+                O agente revisou o plano base e fez {changes.length} {changes.length === 1 ? "mudança" : "mudanças"}
+              </h2>
+              <p className="text-sm text-foreground/75">{changes.length ? `${summarizeChanges(changes)[0].toUpperCase()}${summarizeChanges(changes).slice(1)}.` : "Nenhuma linha precisou mudar."}</p>
+            </>
+          ) : (
+            <>
+              <h2 className="font-semibold">Plano base montado pelo código</h2>
+              <p className="text-sm text-foreground/75">
+                O agente revisa os casos críticos: lead time instável antes da campanha, POs atrasados e SKUs A sem cobertura. Toda mudança passa pelo validador e aparece aqui com antes → depois.
+              </p>
+            </>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {revised && run.status !== "running" && changes.some((c) => c.lineId) && (
+            <Button variant="outline" aria-pressed={onlyChanged} onClick={onToggleOnlyChanged} className="bg-card">
+              {onlyChanged ? "Mostrar todas" : "Ver só alteradas"}
+            </Button>
+          )}
+          {revised && run.status !== "running" && (
+            <Button variant="ghost" onClick={onReset}>
+              <RotateCcwIcon data-icon="inline-start" /> Voltar ao plano base
+            </Button>
+          )}
+          {!revised && run.status !== "running" && (
+            <Button onClick={onRun}>
+              <BotIcon data-icon="inline-start" /> Revisar com o agente
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {run.status === "error" && (
+        <div className="px-5 pb-5">
+          <Notice tone="danger">
+            <div className="flex items-start justify-between gap-3">
+              <span>
+                <strong className="font-semibold">Agente indisponível.</strong> {run.message} O plano na tabela continua valendo.
+              </span>
+              <button type="button" onClick={onDismissError} aria-label="Fechar aviso" className="rounded p-0.5 hover:bg-danger/10">
+                <XIcon className="size-4" />
+              </button>
+            </div>
+          </Notice>
+        </div>
+      )}
+
+      {revised && lastRun && run.status !== "running" && (
+        <div className="border-t border-primary/10">
+          <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium hover:bg-accent">
+            O que o agente mudou e por quê ({changes.length})
+            <ChevronDownIcon className={cn("size-4 transition-transform", open && "rotate-180")} />
+          </button>
+          {open && (
+            <div className="space-y-4 px-5 pb-5">
+              {partial && <Notice tone="warn">A revisão foi interrompida no meio. Os ajustes abaixo já passaram pelo validador e foram mantidos.</Notice>}
+              <div className="rounded-xl bg-card p-4 text-sm whitespace-pre-line">{lastRun.message}</div>
+              {lastRun.unverified.length > 0 && (
+                <Notice tone="warn">
+                  <strong className="font-semibold">Números não verificados:</strong> {lastRun.unverified.join(", ")}. Não vieram de nenhuma ferramenta e podem estar errados.
+                </Notice>
+              )}
+              {changes.length > 0 && (
+                <ul className="divide-y divide-hairline overflow-hidden rounded-xl bg-card">
+                  {changes.map((c) => (
+                    <li key={c.id} className="space-y-1 p-3.5 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">{c.sku}</span>
+                        <Badge variant="agent">{KIND_LABEL[c.kind] ?? c.kind}</Badge>
+                      </div>
+                      <div className="text-muted-foreground">
+                        <span className="line-through decoration-muted-foreground/60">{c.before}</span> → <span className="text-foreground">{c.after}</span>
+                      </div>
+                      <div className="text-foreground/80">{c.reason}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <details className="text-sm">
+                <summary className="cursor-pointer text-muted-foreground">Passos do agente ({lastRun.steps.length})</summary>
+                <ol className="mt-2 list-decimal space-y-0.5 pl-5 text-muted-foreground">
+                  {lastRun.steps.map((s, i) => (
+                    <li key={i}>
+                      {TOOL_LABEL[s.tool] ?? s.tool}
+                      {!s.ok && (
+                        <span className="text-danger-ink">
+                          {" "}
+                          <TriangleAlertIcon className="inline size-3.5" /> recusado pela validação
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
