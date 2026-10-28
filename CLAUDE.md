@@ -116,7 +116,7 @@ Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia rel
 ## Fluxo de trabalho
 
 - Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/superpowers/plans/2026-10-27-gostock.md`) → aplicação → publicação.
-- Estado em 28/10: Tasks 1–16 completas (agente no Claude Haiku 5.5 verificado com a API real; UI completa: Visão geral, Plano, Liquidação, Estoque, ficha do SKU, Fornecedores, Dados). Próxima: Task 17 (README e publicação no Vercel com `ANTHROPIC_API_KEY`).
+- Estado em 28/10: Tasks 1–17 completas (README em pt-BR com as respostas às 5 perguntas). Publicação no Vercel fica com o usuário (configurar `ANTHROPIC_API_KEY`). Próximo: melhorias visuais e de usabilidade.
 - Push para o GitHub é feito pelo usuário (este ambiente não tem credencial).
 - Antes de dizer que algo está pronto: rode testes e build e confira na tela. Números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
 - Commits só quando o usuário pedir.

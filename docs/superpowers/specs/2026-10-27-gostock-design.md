@@ -189,7 +189,7 @@ O que a implementação mudou ou revelou. Prevalece sobre as seções anteriores
 **Números dos dados reais (29/09/2026)**
 - **Situação atual:** estoque a custo R$ 6.784.129; parado R$ 2.274.926 (R$ 454 mil em descontinuados); venda perdida 12m R$ 911.964; fill 12m agregado 98,6%; 90 POs em aberto (10 atrasados); 656 duplicatas removidas.
 - **Plano padrão:** 135 pedidos, R$ 1.969.975, fill esperado 89,5% até 29/12.
-- **Orçamento → fill:** R$ 0,99 mi dá 77,7%; R$ 1,97 mi dá 89,5%; R$ 2,96 mi dá 96,2%; R$ 3,94 mi dá 98,7% (satura). **"98% para todos" exige quase o dobro do orçamento.**
+- **Orçamento → fill:** R$ 0,99 mi dá 77,7%; R$ 1,97 mi dá 89,5%; R$ 2,96 mi dá 96,2%; R$ 3,94 mi dá 98,7% (satura). **"98% para todos" custaria cerca de R$ 5,35 mi, 2,7× o orçamento.**
 - **Liquidação em 90 dias:** libera só R$ 228 mil (87 SKUs). Parte do parado é estoque de lançamento sem saída (ex.: RTU-1083, R$ 535 mil) que nem 40% de desconto move.
 
 **Decisões que mudaram**
