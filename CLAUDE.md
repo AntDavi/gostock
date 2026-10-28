@@ -73,12 +73,14 @@ Definições adotadas (mude só atualizando o design):
 
 ## Comandos
 
-> Serão preenchidos quando o projeto for criado. Mantenha esta seção atualizada.
-
 - `npm run dev`: servidor local
-- `npm test`: testes
-- `npm run data`: roda o pipeline sobre `case_estoque/` e grava os agregados em `data/`
+- `npm test`: testes (Vitest, `tests/**/*.test.ts`)
+- `npm run data`: roda o pipeline sobre `case_estoque/` e grava os agregados em `src/data/dataset.json`
 - `npm run build`: build de produção
+- `npm run lint`: ESLint
+- `npx next typegen && npx tsc --noEmit`: checagem de tipos (o typegen gera os tipos de rota, como `LayoutProps`)
+
+Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia relevante em `node_modules/next/dist/docs/` (ver `AGENTS.md`).
 
 ## Fluxo de trabalho
 
