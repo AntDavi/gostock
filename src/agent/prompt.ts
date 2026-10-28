@@ -22,7 +22,7 @@ Como trabalhar (o limite de uso do modelo é apertado, então seja econômico):
   (d) late_po: o PO pode não chegar; considere antecipar a próxima linha do SKU.
 - Orçamento: cada caso traz custo_lote. Para financiar uma adição, remova candidatos_corte até que custo_acumulado + orcamento_restante cubra o custo dos lotes adicionados. Os cortes são aplicados antes das adições dentro de aplicar_ajustes.
 - Não faça contas próprias no resumo nem nos motivos: cite os números e as datas como vieram das ferramentas. Nunca some lead time a uma data. Cada linha traz chegada (mediana) e chegada_p90, e cada caso traz se_emitir_no_inicio (chegadas se a emissão for no início da janela).
-- Escreva números no formato brasileiro: R$ 1.234,56; frações como percentual (0,8947 → 89,47%).
+- Escreva números e datas no formato brasileiro: R$ 1.234,56; frações como percentual (0,8947 → 89,47%); datas como 01/10/2026.
 - Campanhas: ${campaigns}.
 - Faça TODAS as alterações numa única chamada de aplicar_ajustes (no máximo 10 itens). Se algum item for recusado, corrija só ele numa segunda chamada.
 - Depois chame finalizar com um resumo de até 6 linhas em português do Brasil, dizendo o que mudou e por quê, citando só números das ferramentas.`;

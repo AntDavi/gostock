@@ -277,3 +277,13 @@ describe("callTool", () => {
     expect(s.toolLog[0]).toContain("custo_total");
   });
 });
+
+describe("registro de mudanças", () => {
+  test("antes → depois em formato brasileiro", () => {
+    const s = createSession(ds);
+    const l = s.plan.lines[0];
+    callTool(s, "alterar_emissao", { linha_id: l.id, data: defaultConfig.windowStart, motivo: "x" });
+    const c = s.changes.at(-1)!;
+    expect(c.after).toMatch(/emissão \d{2}\/\d{2}\/\d{4}, R\$ [\d.]+,\d{2}$/);
+  });
+});

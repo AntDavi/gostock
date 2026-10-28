@@ -101,8 +101,12 @@ function findLine(s: AgentSession, id: string): PlanLine {
   return l;
 }
 
+const brlText = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v).replace(/\u00a0/g, " ");
+const dateText = (d: string) => d.split("-").reverse().join("/");
+
+/** Texto do antes → depois que aparece na tela, em formato brasileiro. */
 function describeLine(l: PlanLine) {
-  return `${l.lots} lote(s) = ${l.units} un, emissão ${l.emitBy}, R$ ${r2(l.cost)}`;
+  return `${l.lots} lote(s) = ${l.units.toLocaleString("pt-BR")} un, emissão ${dateText(l.emitBy)}, ${brlText(l.cost)}`;
 }
 
 function summary(s: AgentSession) {

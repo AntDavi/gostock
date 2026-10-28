@@ -26,8 +26,8 @@ function extract(raw: string): Found[] {
     const end = start + m[0].length;
     const before = masked[start - 1] ?? " ";
     const after = masked[end] ?? " ";
-    // colado a letra ou hífen: código de SKU, PO, fornecedor
-    if (!m[1] && (/[\p{L}\-_]/u.test(before) || /[\p{L}\-_]/u.test(after))) continue;
+    // colado a letra ou hífen: código de SKU, PO, fornecedor; depois de "/": lista de códigos (APC-1050/1149)
+    if (!m[1] && (/[\p{L}\-_/]/u.test(before) || /[\p{L}\-_]/u.test(after))) continue;
     let value = parseBR(m[2]);
     const suffix = (m[3] ?? "").trim().toLowerCase();
     if (suffix.startsWith("mi")) value *= suffix === "mil" ? 1e3 : 1e6;

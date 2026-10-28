@@ -14,7 +14,7 @@ import { useDataset } from "./DatasetProvider";
 import { brl, dateBR, intBR, pct } from "./format";
 import { Kpi } from "./Kpi";
 import { lowCoverage, overviewAlerts, topIdle } from "./overview";
-import { useOverview } from "./useOverview";
+import { useCompute } from "./useCompute";
 
 const CHART_ROWS = 25;
 
@@ -43,7 +43,7 @@ function BudgetSummary({ points, budget, target, uniform98Cost }: { points: Budg
 
 export function Overview() {
   const { dataset: ds, config: cfg, error } = useDataset();
-  const ov = useOverview(ds, cfg);
+  const ov = useCompute("overview", ds, cfg);
 
   if (error) {
     return (
@@ -56,7 +56,7 @@ export function Overview() {
   if (!ds || !cfg) return <OverviewSkeleton />;
 
   const k = ds.kpis;
-  const alerts = ov.status === "done" ? overviewAlerts(ds, ov.overview, cfg) : null;
+  const alerts = ov.status === "done" ? overviewAlerts(ds, ov.result, cfg) : null;
 
   return (
     <div className="space-y-6">
@@ -100,7 +100,7 @@ export function Overview() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {ov.status === "done" ? <StockoutChart rows={lowCoverage(ds, ov.overview, cfg, CHART_ROWS)} referenceDate={cfg.referenceDate} /> : <ChartState state={ov} height={560} />}
+            {ov.status === "done" ? <StockoutChart rows={lowCoverage(ds, ov.result, cfg, CHART_ROWS)} referenceDate={cfg.referenceDate} /> : <ChartState state={ov} height={560} />}
           </CardContent>
         </Card>
         <Card>
@@ -122,8 +122,8 @@ export function Overview() {
         <CardContent className="space-y-4">
           {ov.status === "done" ? (
             <>
-              <BudgetCurveChart points={ov.overview.budgetCurve} budget={cfg.budget} target={cfg.serviceTarget} />
-              <BudgetSummary points={ov.overview.budgetCurve} budget={cfg.budget} target={cfg.serviceTarget} uniform98Cost={ov.overview.uniform98Cost} />
+              <BudgetCurveChart points={ov.result.budgetCurve} budget={cfg.budget} target={cfg.serviceTarget} />
+              <BudgetSummary points={ov.result.budgetCurve} budget={cfg.budget} target={cfg.serviceTarget} uniform98Cost={ov.result.uniform98Cost} />
             </>
           ) : (
             <ChartState state={ov} height={256} />
@@ -145,7 +145,7 @@ function AlertLink({ href, tone, count, text }: { href: string; tone: "danger" |
   );
 }
 
-function ChartState({ state, height }: { state: { status: "loading" } | { status: "error"; error: string } | { status: "done" }; height: number }) {
+function ChartState({ state, height }: { state: { status: "loading" } | { status: "error"; error: string } | { status: "done"; result: unknown }; height: number }) {
   if (state.status === "error") return <p className="text-sm text-danger">Não foi possível calcular: {state.error}</p>;
   return (
     <div className="space-y-2">

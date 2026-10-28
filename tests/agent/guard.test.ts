@@ -39,4 +39,7 @@ describe("numberGuard", () => {
     expect(numberGuard("fill esperado 0.8947", [JSON.stringify({ fill: 0.89470001 })]).ok).toBe(true);
     expect(numberGuard("fill esperado 0.8947", [JSON.stringify({ fill: 0.5 })]).unverified).toEqual(["0.8947"]);
   });
+  test("lista de códigos com barra (APC-1050/1149/1154) não é número", () => {
+    expect(numberGuard("rupturas de APC-1050/1149/1154 antes da BF", []).ok).toBe(true);
+  });
 });

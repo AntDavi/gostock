@@ -4,6 +4,7 @@ import type { Config, Dataset, ISODate } from "../types";
 export type ValidationCode = "UNKNOWN_SKU" | "DISCONTINUED" | "MOQ" | "NON_POSITIVE" | "WINDOW" | "BUDGET" | "DISCOUNT" | "BAD_DATE";
 export interface ValidationError { code: ValidationCode; message: string }
 
+const br = (d: ISODate) => d.split("-").reverse().join("/");
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** Regras de negócio de uma linha de pedido. Primeiro erro é o mais fundamental. */
@@ -20,7 +21,7 @@ export function validateLine(line: { sku: string; units: number; emitBy: ISODate
   if (!isISODate(line.emitBy)) {
     errors.push({ code: "BAD_DATE", message: `Data de emissão inválida: ${line.emitBy} (use AAAA-MM-DD).` });
   } else if (!inRange(line.emitBy, cfg.windowStart, cfg.windowEnd)) {
-    errors.push({ code: "WINDOW", message: `Data de emissão fora da janela ${cfg.windowStart} a ${cfg.windowEnd}.` });
+    errors.push({ code: "WINDOW", message: `Data de emissão fora da janela de ${br(cfg.windowStart)} a ${br(cfg.windowEnd)}.` });
   }
   return errors;
 }
