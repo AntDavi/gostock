@@ -19,7 +19,8 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 
 - Next.js (App Router) + TypeScript `strict`, publicado no Vercel.
 - Tudo em TypeScript. O **pipeline de dados é um módulo puro e compartilhado**: roda em script local (dados padrão), em Web Worker no navegador (upload) e é consumido pelo servidor (agente/plano). Nada de I/O ou APIs de Node/DOM dentro do núcleo do pipeline.
-- LLM: Groq com tool calling, chave em `GROQ_API_KEY` (só no servidor; nunca no cliente, nunca commitada).
+- LLM: atrás da interface `ChatClient` (`src/agent/run.ts`). Hoje o adaptador é o Groq (`GROQ_API_KEY`, `GROQ_MODEL`, padrão `openai/gpt-oss-120b`). **Decisão pendente: migrar para Claude Haiku** (`ANTHROPIC_API_KEY`), trocando só o adaptador. Chaves ficam só no servidor (`.env.local`, nunca no cliente, nunca commitadas).
+- Groq gratuito: 8.000 tokens/min e 1.000 requisições/dia em todos os modelos. `llama-3.3-70b-versatile` foi retirado. Por isso o agente economiza contexto (ver Arquitetura do agente).
 - Requisições ao servidor ≤ 4,5 MB (limite do Vercel). Por isso CSV bruto nunca vai ao servidor. O navegador manda o resumo por SKU.
 
 ## Arquitetura
@@ -30,6 +31,23 @@ CSVs ──► pipeline (puro, TS) ──► resumo por SKU (JSON)
           ├ local: script → data/   ├ servidor: motor de plano + agente (Groq, tools) + validador
           └ upload: Web Worker      └ navegador: Visão geral · Plano · Liquidação · Estoque · Fornecedores · Upload
 ```
+
+Mapa do código:
+- `src/core/`: pipeline puro (`load`, `clean`, `leadtime`, `demand`, `metrics`, `markdown`, `pipeline`).
+- `src/core/plan/`: plano (`simulate`, `safety`, `allocate`, `validate`, `critical`, `curve`, `export`).
+- `src/agent/`: sessão, ferramentas, guarda de números, prompt e loop.
+- `src/app/api/{agent,dataset}`: rotas.
+- `src/data/dataset.json`: agregado padrão.
+
+### Arquitetura do agente
+
+- **Contexto inicial calculado pelo código:** a 1ª mensagem já traz `resumo_plano` (com `candidatos_corte` e custo acumulado) e `listar_casos_criticos` (3 de cada tipo, com custo do lote, lead time mediano e P90, e as linhas do SKU).
+- **Ajustes em lote:** o agente faz os ajustes numa chamada de `aplicar_ajustes`. Dentro do lote, cortes e reduções são aplicados antes das adições. Depois chama `finalizar`.
+- **Histórico compacto:** resultados de ferramenta antigos são resumidos (os 4 últimos ficam completos).
+- **Erros do modelo:** 429 espera o "try again in Xs" dentro do prazo de 100 s. `400 tool_use_failed` (JSON malformado) tenta de novo até 2 vezes.
+- **Falha no meio:** os ajustes já validados são mantidos com a mensagem "Revisão parcial", gerada pelo código. Sem nenhum ajuste, a rota responde `ok:false` e o plano base fica intacto.
+- **Guarda de números:** `numberGuard` confere cada número do resumo contra as saídas das ferramentas. A saída de `finalizar` não conta como fonte. Hífens tipográficos e milhar com espaço são normalizados.
+- **Onde está o valor:** o plano base já usa o orçamento de forma quase ótima pela margem. O ganho do agente está em risco que o código não pesa, como antecipar emissões quando a chegada pelo P90 do fornecedor cai depois do início da campanha.
 
 Parâmetros de negócio (orçamento, data de referência, janela, calendário, custos, teto de desconto) são **um objeto de configuração**, com padrão vindo de `case_estoque/parametros.md`. Não espalhe constantes como `1970000` ou `"2026-11-20"` pelo código.
 
@@ -55,6 +73,16 @@ Definições adotadas (mude só atualizando o design):
 - **Orçamento** = custo dos POs novos emitidos na janela.
 - **Quantidade do pedido** cobre lead time + 30 dias de revisão + estoque de segurança.
 - **Plano padrão** usa serviço diferenciado (98% para os SKUs de maior venda/margem, menor para a cauda). "98% para todos" é cenário.
+- **Prioridade de uma linha no orçamento** = margem × unidades vendidas até o fim da janela ÷ custo. Linha que só serve janeiro vale 0 e é financiada por último.
+- **Fill do plano** é medido até `windowEnd`. A perda estatística σL·G(z) só conta para linhas que chegam até lá.
+- **Curva caixa × serviço:** `budgetCurve` (orçamento → fill alcançável) é a que responde a pergunta 5. `serviceCurve` (nível uniforme sem teto) só serve para o custo de "98% para todos".
+
+Números de referência (dados reais, 29/09/2026), para conferir a UI:
+- **Situação atual:** estoque a custo R$ 6.784.129; parado R$ 2.274.926; venda perdida 12m R$ 911.964; fill 12m 98,6%; 90 POs em aberto (10 atrasados).
+- **Plano padrão:** 135 linhas, R$ 1.969.975, fill esperado 89,5%.
+- **Curva orçamento → fill:** R$ 2,96 mi dá 96,2%; R$ 3,94 mi dá 98,7% (satura).
+- **"98% para todos":** custaria cerca de R$ 5,35 mi.
+- **Liquidação:** 87 SKUs, R$ 228 mil liberados em 90 dias.
 
 ## Convenções
 
@@ -84,6 +112,8 @@ Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia rel
 
 ## Fluxo de trabalho
 
-- Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação → aplicação → publicação.
+- Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/superpowers/plans/2026-10-27-gostock.md`) → aplicação → publicação.
+- Estado em 27/10: Tasks 1–11 completas. Task 12 implementada e testada com modelo simulado; a verificação com o LLM real está pausada até a troca de provedor. Próximas: troca para Claude Haiku, depois Tasks 13–17 (UI, upload, publicação).
+- Push para o GitHub é feito pelo usuário (este ambiente não tem credencial).
 - Antes de dizer que algo está pronto: rode testes e build e confira na tela. Números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
 - Commits só quando o usuário pedir.
