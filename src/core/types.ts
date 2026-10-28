@@ -82,3 +82,16 @@ export const defaultScenario: Scenario = {
   protectedBrands: [],
   reinvestMarkdown: false,
 };
+
+export interface SkuMetrics {
+  onHand: number;
+  stockValue: number;
+  coverageDays: number;
+  idleUnits: number;
+  idleValue: number;
+  lostUnits12m: number;
+  lostRevenue12m: number;
+  fillRate12m: number;
+  revenue12m: number;
+  avgPrice12m: number;
+}
