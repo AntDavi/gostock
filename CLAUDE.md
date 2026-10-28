@@ -18,6 +18,8 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 ## Stack
 
 - Next.js (App Router) + TypeScript `strict`, publicado no Vercel.
+- UI com **shadcn** (estilo `base-nova`, sobre Base UI: use `render={<Link …/>}` em vez de `asChild`), Tailwind 4 e Recharts via o `chart` do shadcn. Adicione componentes com `npx shadcn@latest add <nome>`. Cores de estado no tema: `danger` (ruptura) e `warn` (excesso).
+- Contas pesadas da tela (plano base, curvas, rupturas) rodam num Web Worker (`src/workers/compute.worker.ts`, hook `useCompute`). O upload processa os CSVs em `src/workers/pipeline.worker.ts`. O React Compiler está ligado: não use `useMemo`/`useCallback` manuais em componentes novos.
 - Tudo em TypeScript. O **pipeline de dados é um módulo puro e compartilhado**: roda em script local (dados padrão), em Web Worker no navegador (upload) e é consumido pelo servidor (agente/plano). Nada de I/O ou APIs de Node/DOM dentro do núcleo do pipeline.
 - LLM: atrás da interface `ChatClient` (`src/agent/run.ts`). O adaptador é o Claude Haiku 5.5 (`src/agent/claude.ts`, `@anthropic-ai/sdk`; `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, padrão `claude-haiku-5-5`, effort `medium`, thinking adaptativo). O Groq foi abandonado por limite de uso (8.000 tokens/min). Chaves ficam só no servidor (`.env.local`, nunca no cliente, nunca commitadas).
 - Haiku 5.5 rejeita `temperature`/`top_p`/`top_k` e prefill. Os blocos de thinking precisam voltar intactos (`ChatMessage.raw`) e o histórico não pode ser editado, senão a API responde 400.
@@ -36,7 +38,8 @@ Mapa do código:
 - `src/core/`: pipeline puro (`load`, `clean`, `leadtime`, `demand`, `metrics`, `markdown`, `pipeline`).
 - `src/core/plan/`: plano (`simulate`, `safety`, `allocate`, `validate`, `critical`, `curve`, `export`).
 - `src/agent/`: sessão, ferramentas, guarda de números, prompt e loop.
-- `src/app/api/{agent,dataset}`: rotas.
+- `src/app/api/{agent,dataset}`: rotas. `src/app/*`: páginas finas que renderizam `src/ui/pages/*` (cliente).
+- `src/ui/`: provedor de dados, formatação pt-BR, gráficos, plano (`plan/`), funções puras testadas (`overview`, `inventory`, `approvals`).
 - `src/data/dataset.json`: agregado padrão.
 
 ### Arquitetura do agente
@@ -113,7 +116,7 @@ Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia rel
 ## Fluxo de trabalho
 
 - Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/superpowers/plans/2026-10-27-gostock.md`) → aplicação → publicação.
-- Estado em 28/10: Tasks 1–11 completas. Task 12 migrada para Claude Haiku 5.5 e testada com modelo simulado; falta a verificação com o modelo real (`npx tsx .superpowers/agent-run.mts`, precisa de `ANTHROPIC_API_KEY` no `.env.local`). Próximas: Tasks 13–17 (UI, upload, publicação).
+- Estado em 28/10: Tasks 1–16 completas (agente no Claude Haiku 5.5 verificado com a API real; UI completa: Visão geral, Plano, Liquidação, Estoque, ficha do SKU, Fornecedores, Dados). Próxima: Task 17 (README e publicação no Vercel com `ANTHROPIC_API_KEY`).
 - Push para o GitHub é feito pelo usuário (este ambiente não tem credencial).
 - Antes de dizer que algo está pronto: rode testes e build e confira na tela. Números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
 - Commits só quando o usuário pedir.

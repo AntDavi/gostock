@@ -39,7 +39,10 @@ export function useCompute<K extends ComputeKind>(kind: K, dataset: Dataset | nu
       fail(e.message || "erro no cálculo");
       worker.terminate();
     };
-    worker.postMessage({ id, kind, dataset, config });
+    // O histórico diário (só existe após upload) não entra nas contas e pesa na cópia para o worker.
+    const { daily: _daily, ...lean } = dataset;
+    void _daily;
+    worker.postMessage({ id, kind, dataset: lean, config });
     return () => worker.terminate();
   }, [kind, dataset, config]);
 

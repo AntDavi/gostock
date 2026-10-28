@@ -68,3 +68,18 @@ describe("runPipeline", () => {
     expect(n.demand.campaignLift.bf).toBeCloseTo(2, 1); // mediana de AAA-1 (3) e BBB-1 (1)
   });
 });
+
+describe("configuração customizada", () => {
+  test("outra referência e outra janela: plano só emite dentro da nova janela", async () => {
+    const { buildBasePlan } = await import("@/core/plan/allocate");
+    const { defaultScenario } = await import("@/core/types");
+    const cfg = { ...defaultConfig, referenceDate: "2026-08-31", windowStart: "2026-09-01", windowEnd: "2026-11-29", budget: 1e9 };
+    const d = runPipeline(rawMini(), cfg);
+    expect(d.config).toEqual(cfg);
+    const plan = buildBasePlan(d, cfg, defaultScenario);
+    expect(plan.lines.length).toBeGreaterThan(0);
+    for (const l of plan.lines) {
+      expect(l.emitBy >= cfg.windowStart && l.emitBy <= cfg.windowEnd).toBe(true);
+    }
+  });
+});
