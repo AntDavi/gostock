@@ -179,3 +179,22 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 3. Plano de implementação.
 4. Aplicação.
 5. Publicação: link Vercel público + repositório GitHub público (sem `case_estoque/` e sem o PDF, via `.gitignore`).
+
+---
+
+## 9. Atualizações após a implementação do núcleo e do agente (27/10)
+
+O que a implementação mudou ou revelou. Prevalece sobre as seções anteriores onde houver conflito.
+
+**Números dos dados reais (29/09/2026)**
+- **Situação atual:** estoque a custo R$ 6.784.129; parado R$ 2.274.926 (R$ 454 mil em descontinuados); venda perdida 12m R$ 911.964; fill 12m agregado 98,6%; 90 POs em aberto (10 atrasados); 656 duplicatas removidas.
+- **Plano padrão:** 135 pedidos, R$ 1.969.975, fill esperado 89,5% até 29/12.
+- **Orçamento → fill:** R$ 0,99 mi dá 77,7%; R$ 1,97 mi dá 89,5%; R$ 2,96 mi dá 96,2%; R$ 3,94 mi dá 98,7% (satura). **"98% para todos" exige quase o dobro do orçamento.**
+- **Liquidação em 90 dias:** libera só R$ 228 mil (87 SKUs). Parte do parado é estoque de lançamento sem saída (ex.: RTU-1083, R$ 535 mil) que nem 40% de desconto move.
+
+**Decisões que mudaram**
+- **Curva da pergunta 5:** passa a ser orçamento → fill alcançável (`budgetCurve`). A curva por nível uniforme inclui a cobertura de janeiro e contradiz o plano real; fica só para estimar o custo de "98% para todos".
+- **Prioridade no orçamento:** conta só a demanda até o fim da janela (fill dentro do orçamento passou de 80,5% para 89,5%).
+- **Falha do LLM no meio da revisão:** os ajustes já validados são mantidos, com aviso "Revisão parcial". Sem ajustes, o plano base fica intacto.
+- **LLM:** o Groq gratuito limita 8.000 tokens/min e o `llama-3.3-70b-versatile` foi retirado. O agente foi redesenhado para ser econômico (contexto inicial pronto, ajustes em lote, histórico compacto, retentativas). **Pendente: migrar para Claude Haiku**, trocando só o adaptador `ChatClient`.
+- **Papel do agente na prática:** o plano base já é quase ótimo pela margem. O ganho do agente está no risco que o código não pesa, como antecipar emissões de fornecedor instável (P90) antes da campanha e proteger SKUs A que rompem antes da BF.
