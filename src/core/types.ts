@@ -95,3 +95,5 @@ export interface SkuMetrics {
   revenue12m: number;
   avgPrice12m: number;
 }
+
+export interface MarkdownOption { discount: number; unitsSold90d: number; revenue: number; capitalFreed: number; holdingCost: number; value: number }
