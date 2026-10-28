@@ -43,6 +43,8 @@ export function skuMetrics(series: DayPoint[], model: DemandModel, sku: SkuRow, 
     lostRevenue12m: lost * avgPrice12m,
     fillRate12m: demanded > 0 ? units / demanded : 1,
     revenue12m: revenue,
+    unitsSold12m: units,
+    demandUnits12m: demanded,
     avgPrice12m,
   };
 }

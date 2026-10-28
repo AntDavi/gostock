@@ -93,7 +93,53 @@ export interface SkuMetrics {
   lostRevenue12m: number;
   fillRate12m: number;
   revenue12m: number;
+  unitsSold12m: number;
+  demandUnits12m: number;
   avgPrice12m: number;
 }
 
 export interface MarkdownOption { discount: number; unitsSold90d: number; revenue: number; capitalFreed: number; holdingCost: number; value: number }
+
+export interface WeekPoint { week: ISODate; units: number; onHand: number; censoredDays: number }
+export interface SkuSummary {
+  sku: string;
+  brand: string;
+  description: string;
+  category: string;
+  status: SkuStatus;
+  supplier: string;
+  purchaseUnit: PurchaseUnit;
+  moq: number;
+  lotUnits: number;
+  lotCost: number;
+  unitMargin: number;
+  onHand: number;
+  onOrder: OpenOrder[];
+  demand: DemandModel;
+  abc: "A" | "B" | "C";
+  metrics: Omit<SkuMetrics, "avgPrice12m">;
+  markdown: MarkdownOption[];
+  weekly: WeekPoint[];
+}
+export interface SupplierSummary { supplier: string; name: string; leadTime: LeadTimeStats; skuCount: number; openOrders: number; lateOrders: number }
+export interface Kpis {
+  stockValue: number;
+  idleValue: number;
+  lostRevenue12m: number;
+  fillRate12m: number;
+  skuCount: number;
+  activeCount: number;
+  openPoCount: number;
+  latePoCount: number;
+  duplicatesRemoved: number;
+}
+export interface Dataset {
+  id: string;
+  generatedAt: string;
+  source: "default" | "upload";
+  config: Config;
+  skus: SkuSummary[];
+  suppliers: SupplierSummary[];
+  kpis: Kpis;
+  daily?: Record<string, DayPoint[]>;
+}

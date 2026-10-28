@@ -49,6 +49,8 @@ describe("skuMetrics", () => {
     const m = skuMetrics(series(100, 10, "2026-08-01", "2026-08-05"), model(10), sku, cfg);
     expect(m.fillRate12m).toBeCloseTo(1 - 50 / 3650, 3);
     expect(m.revenue12m).toBeCloseTo(3600 * 40);
+    expect(m.unitsSold12m).toBe(3600);
+    expect(m.demandUnits12m).toBeCloseTo(3650);
   });
 
   test("sem venda no período usa preço cheio para valorar a perda", () => {
