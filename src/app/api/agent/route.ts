@@ -3,7 +3,6 @@ import { claudeClient, DEFAULT_MODEL } from "@/agent/claude";
 import { runAgent, type AgentResult } from "@/agent/run";
 import { createSession, stateOf, type AgentState } from "@/agent/session";
 import type { Dataset } from "@/core/types";
-import { defaultDataset } from "@/data/default";
 
 export const maxDuration = 120;
 
@@ -19,7 +18,11 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, error: "Requisição inválida: corpo não é JSON." }, { status: 400 });
   }
   const message = typeof body.message === "string" && body.message.trim() ? body.message.trim().slice(0, MAX_MESSAGE) : DEFAULT_REQUEST;
-  const ds = body.dataset && Array.isArray(body.dataset.skus) ? body.dataset : defaultDataset;
+  // O app não guarda dados no servidor: o navegador manda o resumo por SKU do upload.
+  if (!body.dataset || !Array.isArray(body.dataset.skus)) {
+    return Response.json({ ok: false, error: "Envie os dados do estoque antes de chamar o agente." }, { status: 400 });
+  }
+  const ds = body.dataset;
   const session = createSession(ds, body.state ?? {});
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

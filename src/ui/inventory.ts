@@ -3,7 +3,6 @@ import type { Config, Dataset, ISODate, LeadTimeStats, MarkdownOption, SkuSummar
 import { firstCampaign, OVERSTOCK_DAYS } from "./overview";
 
 export type Situation = "ruptura" | "excesso" | "ok";
-export const SITUATION_LABEL: Record<Situation, string> = { ruptura: "Ruptura antes da campanha", excesso: "Excesso (> 1 ano)", ok: "OK" };
 
 /** Mesmo critério dos alertas da Visão geral. */
 export function skuSituation(s: SkuSummary, stockout: ISODate | null | undefined, cfg: Config): Situation {

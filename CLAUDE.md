@@ -4,7 +4,7 @@ Ferramenta de decisão de estoque para a GoBeauté (Desafio AI-First Gogroup, Pr
 
 **Prazo: domingo, 01/11/2026.** Entrega: link público no Vercel (sem login) + repositório público no GitHub.
 
-Documento de problema e design (fonte da verdade sobre escopo e decisões): `docs/superpowers/specs/2026-10-27-gostock-design.md`. Leia antes de mudar comportamento. Se algo aqui conflitar com ele, o documento de design vence. Avise e atualize este arquivo.
+Documento de problema e design (fonte da verdade sobre escopo e decisões): `docs/2026-10-27-gostock-design.md`. Leia antes de mudar comportamento. Se algo aqui conflitar com ele, o documento de design vence. Avise e atualize este arquivo.
 
 ## Regras inegociáveis
 
@@ -12,15 +12,15 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 2. **Regras de negócio vivem no código, não no prompt.** Ficam no validador: múltiplo do MOQ na unidade de compra, conversão `cx 12 un` = 12 unidades, teto de orçamento, desconto ≤ 40%, sem recompra de descontinuado, emissão dentro da janela. A ferramenta recusa e devolve o motivo.
 3. **O código monta o plano base, o agente faz o julgamento.** O agente atua sobre os casos críticos (corte de orçamento, F05/lead time instável antes da BF, histórico curto, PO atrasado). A UI mostra o que ele mudou: antes → depois + motivo.
 4. **Funciona sem o LLM.** Se o LLM falhar, o plano base continua válido e visível. Nunca deixe a tela quebrar por erro do agente.
-5. **Dados confidenciais.** `case_estoque/` e `Desafio_AI-First_Gogroup.pdf` **nunca** vão para o git. O repo leva só agregados: histórico **semanal** por SKU, projeções e indicadores, sem custo/preço unitário cru. Histórico diário só via upload, só no navegador do usuário.
+5. **Dados confidenciais.** `case_estoque/` e `Desafio_AI-First_Gogroup.pdf` **nunca** vão para o git. O repo **não leva dados** (nem agregados): o app abre vazio e tudo vem do upload dos CSVs, processado e guardado (IndexedDB) só no navegador do usuário.
 6. **Gráfico só se apoiar uma decisão.** Visual sóbrio, neutro quente. Cor com significado só para estado (vermelho = ruptura, âmbar = excesso), com as variantes `-ink` para texto (contraste ≥ 4,5:1). A ameixa (`--primary`, #5b2a55) é só cor de interação: botão principal, item ativo, foco, seleção e marca do que o agente mudou. Sem verde; barras de dados em cinza/tinta.
 
 ## Stack
 
 - Next.js (App Router) + TypeScript `strict`, publicado no Vercel.
-- UI com **shadcn** (estilo `base-nova`, sobre Base UI: use `render={<Link …/>}` em vez de `asChild`), Tailwind 4, fonte Hanken Grotesk e Recharts via o `chart` do shadcn. Adicione componentes com `npx shadcn@latest add <nome>`. Tokens em `src/app/globals.css` (`danger`/`warn` com `-ink` e `-soft`, `surface`, `hairline`); peças de tela em `src/ui/kit.tsx` (`Stat`, `Meter`, `Pills`, `Notice`, `Section`, `InfoTip`) e o menu lateral em `src/ui/AppShell.tsx`. O redesign seguiu `docs/GoStock Redesign (standalone).html`, com as correções da crítica em `.impeccable/critique/`.
+- UI com **shadcn** (estilo `base-nova`, sobre Base UI: use `render={<Link …/>}` com `nativeButton={false}` em vez de `asChild`), Tailwind 4, fonte Hanken Grotesk e Recharts via o `chart` do shadcn. Adicione componentes com `npx shadcn@latest add <nome>`. Tokens em `src/app/globals.css` (`danger`/`warn` com `-ink` e `-soft`, `surface`, `hairline`); peças de tela em `src/ui/kit.tsx` (`Stat`, `Meter`, `Pills`, `Notice`, `Section`, `InfoTip`, `ShowMore`) e o menu lateral em `src/ui/AppShell.tsx`. As decisões do redesign (e onde ele diverge do mockup) estão na seção 10 do design.
 - Contas pesadas da tela (plano base, curvas, rupturas) rodam num Web Worker (`src/workers/compute.worker.ts`, hook `useCompute`). O upload processa os CSVs em `src/workers/pipeline.worker.ts`. O React Compiler está ligado: não use `useMemo`/`useCallback` manuais em componentes novos.
-- Tudo em TypeScript. O **pipeline de dados é um módulo puro e compartilhado**: roda em script local (dados padrão), em Web Worker no navegador (upload) e é consumido pelo servidor (agente/plano). Nada de I/O ou APIs de Node/DOM dentro do núcleo do pipeline.
+- Tudo em TypeScript. O **pipeline de dados é um módulo puro e compartilhado**: roda em script local (conferência), em Web Worker no navegador (upload) e é consumido pelo servidor (agente/plano). Nada de I/O ou APIs de Node/DOM dentro do núcleo do pipeline.
 - LLM: atrás da interface `ChatClient` (`src/agent/run.ts`). O adaptador é o Claude Haiku 5.5 (`src/agent/claude.ts`, `@anthropic-ai/sdk`; `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, padrão `claude-haiku-5-5`, effort `medium`, thinking adaptativo). O Groq foi abandonado por limite de uso (8.000 tokens/min). Chaves ficam só no servidor (`.env.local`, nunca no cliente, nunca commitadas).
 - Haiku 5.5 rejeita `temperature`/`top_p`/`top_k` e prefill. Os blocos de thinking precisam voltar intactos (`ChatMessage.raw`) e o histórico não pode ser editado, senão a API responde 400.
 - Requisições ao servidor ≤ 4,5 MB (limite do Vercel). Por isso CSV bruto nunca vai ao servidor. O navegador manda o resumo por SKU.
@@ -30,17 +30,18 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 ```
 CSVs ──► pipeline (puro, TS) ──► resumo por SKU (JSON)
           │                         │
-          ├ local: script → data/   ├ servidor: motor de plano + agente (Claude, tools) + validador
-          └ upload: Web Worker      └ navegador: Visão geral · Plano · Liquidação · Estoque · Fornecedores · Upload
+          ├ upload: Web Worker      ├ servidor: motor de plano + agente (Claude, tools) + validador
+          │   → IndexedDB           └ navegador: Visão geral · Plano · Liquidação · Estoque · Fornecedores · Dados
+          └ local: npm run data (só conferência)
 ```
 
 Mapa do código:
 - `src/core/`: pipeline puro (`load`, `clean`, `leadtime`, `demand`, `metrics`, `markdown`, `pipeline`).
-- `src/core/plan/`: plano (`simulate`, `safety`, `allocate`, `validate`, `critical`, `curve`, `export`).
+- `src/core/plan/`: plano (`simulate`, `safety`, `allocate`, `validate`, `critical`, `curve`, `risk`, `export`).
 - `src/agent/`: sessão, ferramentas, guarda de números, prompt e loop.
-- `src/app/api/{agent,dataset}`: rotas. `src/app/*`: páginas finas que renderizam `src/ui/pages/*` (cliente).
+- `src/app/api/agent`: rota do agente (exige o resumo por SKU no corpo). `src/app/*`: páginas finas que renderizam `src/ui/pages/*` (cliente).
 - `src/ui/`: provedor de dados, formatação pt-BR, gráficos, plano (`plan/`), funções puras testadas (`overview`, `inventory`, `approvals`).
-- `src/data/dataset.json`: agregado padrão.
+- `src/ui/storedDataset.ts`: resumo do upload salvo no IndexedDB. Sem dataset, as páginas mostram `NoData` (convite ao upload).
 
 ### Arquitetura do agente
 
@@ -106,7 +107,7 @@ Números de referência (dados reais, 29/09/2026), para conferir a UI:
 
 - `npm run dev`: servidor local
 - `npm test`: testes (Vitest, `tests/**/*.test.ts`)
-- `npm run data`: roda o pipeline sobre `case_estoque/` e grava os agregados em `src/data/dataset.json`
+- `npm run data`: roda o pipeline sobre `case_estoque/` e imprime os números de referência (não grava nada)
 - `npm run build`: build de produção
 - `npm run lint`: ESLint
 - `npx next typegen && npx tsc --noEmit`: checagem de tipos (o typegen gera os tipos de rota, como `LayoutProps`)
@@ -115,8 +116,8 @@ Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia rel
 
 ## Fluxo de trabalho
 
-- Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/superpowers/plans/2026-10-27-gostock.md`) → aplicação → publicação.
-- Estado em 28/10: Tasks 1–17 completas (README em pt-BR com as respostas às 5 perguntas). Publicação no Vercel fica com o usuário (configurar `ANTHROPIC_API_KEY`). Próximo: melhorias visuais e de usabilidade.
+- Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/2026-10-27-gostock.md`, histórico) → aplicação → publicação.
+- Estado em 28/10: Tasks 1–17 completas, redesign aplicado, dados só por upload e agente com sugestões e resposta visível. Publicação no Vercel fica com o usuário (configurar `ANTHROPIC_API_KEY`).
 - Push para o GitHub é feito pelo usuário (este ambiente não tem credencial).
-- Antes de dizer que algo está pronto: rode testes e build e confira na tela. Números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
+- Antes de dizer que algo está pronto: rode testes e build e confira na tela. Para conferir na tela, envie os CSVs de `case_estoque/` em Dados; os números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
 - Commits só quando o usuário pedir.

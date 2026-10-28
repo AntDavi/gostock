@@ -17,7 +17,7 @@ ctx.onmessage = (e: MessageEvent<PipelineRequest>) => {
     const loaded = loadDataset(e.data.files);
     if (!loaded.data) return send({ type: "error", errors: loaded.errors });
     send({ type: "progress", step: "Limpando dados, estimando demanda e calculando indicadores" });
-    const dataset = runPipeline(loaded.data, e.data.config, { includeDaily: true, source: "upload" });
+    const dataset = runPipeline(loaded.data, e.data.config, { includeDaily: true });
     send({ type: "done", dataset, warnings: loaded.warnings });
   } catch (err) {
     send({ type: "error", errors: [`Falha ao processar: ${err instanceof Error ? err.message : String(err)}`] });

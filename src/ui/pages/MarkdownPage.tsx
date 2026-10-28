@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { readStoredApprovals } from "../approvals";
 import { downloadCsv } from "../common/download";
-import { LoadError, PageHeader, PageSkeleton } from "../common/PageState";
+import { LoadError, PageHeader, NoData } from "../common/PageState";
 import { useDataset } from "../DatasetProvider";
 import { brl, intBR, pct } from "../format";
 import { InfoTip, Meter, Notice, Pills, ShowMore, Stat } from "../kit";
 import { markdownRows, markdownToCsv } from "../inventory";
+import { NO_DEMAND_COVERAGE } from "@/core/metrics";
 
-const NO_DEMAND = 9999;
 const PAGE = 25;
 type Tab = "all" | "ativo" | "descontinuado";
 
@@ -24,7 +24,7 @@ export function MarkdownPage() {
   const [tab, setTab] = useState<Tab>("all");
   const [limit, setLimit] = useState(PAGE);
   if (error) return <LoadError message={error} />;
-  if (!ds || !cfg) return <PageSkeleton />;
+  if (!ds) return <NoData />;
 
   const agent = readStoredApprovals(ds.id, cfg)?.agentState?.markdowns ?? [];
   const { rows, totalFreed } = markdownRows(ds, cfg, choices, agent);
@@ -120,7 +120,7 @@ export function MarkdownPage() {
                 </TableCell>
                 <TableCell>{r.summary.status === "descontinuado" ? <Badge variant="outline">descontinuado</Badge> : <Badge variant="secondary">ativo</Badge>}</TableCell>
                 <TableCell className="tabular-nums">
-                  <div className="font-medium">{r.coverageDays >= NO_DEMAND ? "sem demanda" : `${intBR(r.coverageDays)} d`}</div>
+                  <div className="font-medium">{r.coverageDays >= NO_DEMAND_COVERAGE ? "sem demanda" : `${intBR(r.coverageDays)} d`}</div>
                   <div className="text-xs text-warn-ink">{intBR(r.excessUnits)} un em excesso</div>
                 </TableCell>
                 <TableCell>

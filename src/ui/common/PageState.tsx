@@ -1,7 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { UploadIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useDataset } from "../DatasetProvider";
 
 export function LoadError({ title = "Erro ao carregar os dados", message }: { title?: string; message: string }) {
   return (
@@ -31,6 +35,27 @@ export function PageHeader({ title, subtitle, children }: { title: string; subti
         <p className="mt-1 text-[15px] text-muted-foreground">{subtitle}</p>
       </div>
       {children && <div className="flex shrink-0 flex-wrap gap-2">{children}</div>}
+    </div>
+  );
+}
+
+/** Tela sem dataset: esqueleto enquanto lê o navegador; depois, o convite para enviar os CSVs. */
+export function NoData() {
+  const { loading } = useDataset();
+  if (loading) return <PageSkeleton />;
+  return (
+    <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-20 text-center">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-accent text-primary" aria-hidden>
+        <UploadIcon className="size-6" />
+      </div>
+      <h1 className="text-[28px] leading-tight font-bold">Envie os dados do estoque</h1>
+      <p className="text-[15px] text-muted-foreground">
+        O GoStock analisa os cinco CSVs do seu estoque (SKUs, vendas diárias, estoque diário, compras e fornecedores). O processamento é feito no seu navegador e pode levar alguns
+        segundos. Depois disso, o plano de compras, a liquidação e as demais telas ficam disponíveis.
+      </p>
+      <Button size="lg" render={<Link href="/dados" />} nativeButton={false}>
+        <UploadIcon data-icon="inline-start" /> Enviar CSVs
+      </Button>
     </div>
   );
 }

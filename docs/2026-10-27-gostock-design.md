@@ -109,8 +109,8 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 
 ## 4. Restrições
 - **Prazo:** 5 dias (até 01/11/2026).
-- **Confidencialidade:** o PDF diz "não compartilhe os dados nem este documento". Decisão do usuário: **CSVs e PDF não vão para o GitHub.** O repositório leva só os **resultados agregados** (projeções e indicadores por SKU) gerados localmente, com o comando para regerar documentado.
-  - **Nível de detalhe permitido no repositório (decidido pelo usuário, 27/10):** histórico **semanal** de vendas e estoque por SKU, projeções e indicadores derivados. **Sem** custo unitário nem preço de venda crus por SKU (só valores agregados já calculados, como capital parado, valor do pedido e venda perdida). Sem histórico diário.
+- **Confidencialidade:** o PDF diz "não compartilhe os dados nem este documento". Decisão do usuário: **CSVs e PDF não vão para o GitHub.** **Atualização 28/10 (decisão do usuário):** o repositório e o app publicado **não trazem dados**, nem agregados. Toda análise parte do upload dos cinco CSVs, processados no navegador. O app abre vazio e pede o upload.
+  - *(Substituído em 28/10.)* **Nível de detalhe permitido no repositório (decidido pelo usuário, 27/10):** histórico **semanal** de vendas e estoque por SKU, projeções e indicadores derivados. **Sem** custo unitário nem preço de venda crus por SKU (só valores agregados já calculados, como capital parado, valor do pedido e venda perdida). Sem histórico diário.
   - O **histórico diário completo** e os dados crus só aparecem quando o usuário faz **upload** dos CSVs, e ficam apenas no navegador dele.
   - Consequência para o builder: as ferramentas do agente e o motor de plano precisam funcionar sobre o resumo agregado. Para valorar pedidos, o resumo precisa de algum custo por SKU (ex.: custo por lote de MOQ). **Limitação aceita:** quem dividir o valor de um pedido pela quantidade chega ao custo unitário. O objetivo é não republicar as tabelas cruas do desafio, não esconder cada número derivado.
 - **LLM:** Claude Haiku 5.5 (API da Anthropic), via variável de ambiente no servidor.
@@ -125,8 +125,8 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 
 ### Arquitetura em três camadas
 1. **Pipeline de dados (TypeScript, módulo compartilhado):** lê os CSVs → limpa (dedup, negativos, lacunas, conversão de caixa) → calcula demanda corrigida pela ruptura, tendência, efeito BF/Natal, lead times por fornecedor, estoque a caminho, capital parado, venda perdida, nível de serviço histórico → gera um **resumo por SKU** (JSON).
-   - **Dados padrão:** o pipeline roda **na máquina do desenvolvedor** sobre `case_estoque/` e o JSON agregado é commitado.
-   - **Upload:** o usuário envia os mesmos CSVs pela interface; o pipeline roda **no navegador** (Web Worker), os dados brutos nunca saem da máquina dele, e o resumo substitui o dataset padrão na sessão. Validar colunas e avisar o que estiver errado.
+   - **Upload (única fonte de dados, 28/10):** o usuário envia os CSVs pela interface; o pipeline roda **no navegador** (Web Worker), os dados brutos nunca saem da máquina dele. O resumo processado fica salvo no IndexedDB do navegador (recarregar não obriga a reprocessar) até o usuário remover. Validar colunas e avisar o que estiver errado.
+   - **Conferência local:** `npm run data` roda o pipeline sobre `case_estoque/` e só imprime os números de referência; não grava arquivo.
 2. **Servidor (rotas Next.js):** o agente (Claude Haiku com tool calling) e o motor de plano. Recebe do navegador o resumo por SKU (algumas centenas de KB) e executa as ferramentas sobre ele. Cenários ("BF +20%", "corta 200 mil") recalculam o plano na hora.
 3. **Navegador:** exibe, aprova/edita/recusa, exporta CSV.
 
@@ -148,7 +148,7 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 - **Liquidação:** SKU, cobertura atual, desconto sugerido, capital liberado, custo de manter parado.
 - **Estoque:** tabela completa com busca e filtros; clique abre a ficha do SKU (histórico de vendas e estoque, projeção, marcações de BF e Natal, POs).
 - **Fornecedores:** lead time real (mediana e P90), SKUs, POs em aberto/atrasados.
-- **Upload de dados:** enviar CSVs e recalcular.
+- **Upload de dados:** enviar CSVs e recalcular. *(Desde 28/10 é a porta de entrada: sem upload, as outras telas pedem os CSVs. Ver seção 10.)*
 
 ---
 
@@ -198,3 +198,28 @@ O que a implementação mudou ou revelou. Prevalece sobre as seções anteriores
 - **Falha do LLM no meio da revisão:** os ajustes já validados são mantidos, com aviso "Revisão parcial". Sem ajustes, o plano base fica intacto.
 - **LLM:** o Groq gratuito limita 8.000 tokens/min e o `llama-3.3-70b-versatile` foi retirado. O agente foi redesenhado para ser econômico (contexto inicial pronto, ajustes em lote, histórico compacto, retentativas). Em 28/10 o adaptador `ChatClient` passou para o Claude Haiku 5.5; o histórico compacto saiu, porque o thinking do Haiku exige histórico sem edição.
 - **Papel do agente na prática:** o plano base já é quase ótimo pela margem. O ganho do agente está no risco que o código não pesa, como antecipar emissões de fornecedor instável (P90) antes da campanha e proteger SKUs A que rompem antes da BF.
+
+---
+
+## 10. Atualizações de 28/10: redesign, dados só por upload e agente
+
+Prevalece sobre as seções anteriores onde houver conflito.
+
+**Dados**
+- O repositório e o app publicado **não trazem dados**, nem agregados. O `src/data/dataset.json` e a rota `/api/dataset` foram removidos.
+- O app abre vazio. As telas de análise mostram um convite ao upload; só a tela Dados funciona sem dados.
+- O resumo processado fica no IndexedDB do navegador (`src/ui/storedDataset.ts`), junto com a configuração aplicada. Recarregar não obriga a reprocessar. "Remover dados" apaga tudo.
+- A rota `/api/agent` exige o resumo por SKU no corpo; sem ele responde 400.
+- `npm run data` virou conferência: roda o pipeline sobre `case_estoque/` e imprime os números de referência, sem gravar arquivo.
+
+**Redesign das telas**
+- Menu lateral com contadores, alertas antes dos indicadores, tabelas com barras e chips, ações por linha e formulário de Dados em seções.
+- Desvios intencionais do mockup, pela regra de cor: **sem verde** ("ok", "ativo" e "meta" ficam em cinza ou tinta); a ameixa (`--primary`) fica só para interação e para marcar o que o agente mudou; barras de dados em cinza/tinta; vermelho = ruptura, âmbar = excesso, cada um com variante `-ink` para texto (contraste ≥ 4,5:1).
+- Também ficaram, contra o mockup: a coluna mín–máx dos fornecedores e a venda perdida 12m no estoque, que apoiam decisão.
+- Tabelas longas mostram parte das linhas com "Mostrar mais" (plano: 25; liquidação: 25; estoque: 100). O conteúdo vai até 1500 px de largura.
+
+**Agente (só na tela do Plano)**
+- Um só ponto de entrada: o painel do agente (revisar, refazer, ver só as alteradas, voltar ao plano base). O botão duplicado do topo saiu.
+- A barra de pedido no rodapé tem sugestões que enviam com um clique e mostra, enquanto o agente trabalha, o pedido enviado e o tempo decorrido.
+- Depois da resposta, o painel mostra o pedido ("Você pediu: …") e a resposta do agente sem precisar abrir nada. As mudanças com antes → depois e os passos ficam num bloco recolhível.
+

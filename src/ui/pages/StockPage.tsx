@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SkuSummary } from "@/core/types";
 import { readStoredApprovals } from "../approvals";
-import { LoadError, PageHeader, PageSkeleton } from "../common/PageState";
+import { LoadError, PageHeader, NoData } from "../common/PageState";
 import { useDataset } from "../DatasetProvider";
 import { brl, dateBR, intBR } from "../format";
 import { skuSituation, type Situation } from "../inventory";
@@ -20,15 +20,15 @@ import { firstCampaign } from "../overview";
 import { useCompute } from "../useCompute";
 import { useMediaQuery } from "../useMediaQuery";
 import { SkuQuick } from "./SkuQuick";
+import { NO_DEMAND_COVERAGE } from "@/core/metrics";
 
-const NO_DEMAND = 9999;
 const PAGE = 100;
 const COVERAGE_SCALE = 180;
 type Quick = "all" | "zerado" | "ruptura" | "excesso" | "descontinuado";
 type SortKey = "coverage" | "value" | "lost";
 const SORT_LABEL: Record<SortKey, string> = { coverage: "Menor cobertura", value: "Maior valor em estoque", lost: "Maior venda perdida" };
 const sortValue: Record<SortKey, (s: SkuSummary) => number> = {
-  coverage: (s) => (s.status === "descontinuado" ? NO_DEMAND + 1 : s.metrics.coverageDays),
+  coverage: (s) => (s.status === "descontinuado" ? NO_DEMAND_COVERAGE + 1 : s.metrics.coverageDays),
   value: (s) => -s.metrics.stockValue,
   lost: (s) => -s.metrics.lostRevenue12m,
 };
@@ -67,7 +67,7 @@ export function StockPage() {
   const docked = useMediaQuery("(min-width: 1280px)");
 
   if (error) return <LoadError message={error} />;
-  if (!ds || !cfg) return <PageSkeleton />;
+  if (!ds) return <NoData />;
 
   const so = stockouts.status === "done" ? stockouts.result : null;
   const sit = (s: SkuSummary): Situation | null => (so ? skuSituation(s, so[s.sku], cfg) : s.metrics.coverageDays > 365 ? "excesso" : null);
@@ -192,7 +192,7 @@ export function StockPage() {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Meter value={Math.min(cov, COVERAGE_SCALE)} max={COVERAGE_SCALE} tone={st === "ruptura" ? "danger" : st === "excesso" ? "warn" : "muted"} className="w-24 shrink-0" />
-                      <span className={cn("tabular-nums", st === "ruptura" && "font-semibold text-danger-ink", st === "excesso" && "text-warn-ink")}>{cov >= NO_DEMAND ? "sem demanda" : `${intBR(cov)} d`}</span>
+                      <span className={cn("tabular-nums", st === "ruptura" && "font-semibold text-danger-ink", st === "excesso" && "text-warn-ink")}>{cov >= NO_DEMAND_COVERAGE ? "sem demanda" : `${intBR(cov)} d`}</span>
                     </div>
                   </TableCell>
                   {!narrow && <TableCell className={cn("text-right tabular-nums", st === "ruptura" && "font-semibold text-danger-ink")}>{date ? dateBR(date) : "—"}</TableCell>}

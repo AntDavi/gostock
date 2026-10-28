@@ -11,14 +11,14 @@ import { simulateSku } from "@/core/plan/simulate";
 import { defaultScenario } from "@/core/types";
 import { readStoredApprovals } from "../approvals";
 import { SkuHistoryChart, type HistoryPoint } from "../charts/SkuHistoryChart";
-import { LoadError, PageSkeleton } from "../common/PageState";
+import { LoadError, NoData } from "../common/PageState";
 import { useDataset } from "../DatasetProvider";
 import { brl, dateBR, intBR, pct } from "../format";
 import { isUnstable, skuSituation } from "../inventory";
 import { useCompute } from "../useCompute";
 import { Notice, Section, Stat } from "../kit";
+import { NO_DEMAND_COVERAGE } from "@/core/metrics";
 
-const NO_DEMAND = 9999;
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -38,7 +38,7 @@ export function SkuPage() {
   const base = useCompute("basePlan", stored?.agentState ? null : ds, cfg);
 
   if (error) return <LoadError message={error} />;
-  if (!ds || !cfg) return <PageSkeleton />;
+  if (!ds) return <NoData />;
   const s = ds.skus.find((x) => x.sku === skuId);
   if (!s) return <LoadError title="SKU não encontrado" message={`O SKU ${skuId} não existe nos dados carregados.`} />;
 
@@ -85,7 +85,7 @@ export function SkuPage() {
       <section aria-label="Situação" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
           label="Cobertura"
-          value={s.metrics.coverageDays >= NO_DEMAND ? "sem demanda" : `${intBR(s.metrics.coverageDays)} d`}
+          value={s.metrics.coverageDays >= NO_DEMAND_COVERAGE ? "sem demanda" : `${intBR(s.metrics.coverageDays)} d`}
           tone={situation === "ruptura" ? "danger" : situation === "excesso" ? "warn" : "neutral"}
           note={`${intBR(s.onHand)} un em estoque · ${intBR(s.demand.baseDaily)} un/dia`}
         />

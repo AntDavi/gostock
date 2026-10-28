@@ -69,7 +69,7 @@ interface Work {
   lt: LeadTimeStats;
 }
 
-export function runPipeline(raw: RawDataset, cfg: Config, opts: { includeDaily?: boolean; source?: "default" | "upload" } = {}): Dataset {
+export function runPipeline(raw: RawDataset, cfg: Config, opts: { includeDaily?: boolean } = {}): Dataset {
   const { sales, removed } = dedupeSales(raw.sales);
   const salesBy = groupBy(sales.filter((s) => s.date <= cfg.referenceDate));
   const stockBy = groupBy<StockRow>(raw.stock.filter((s) => s.date <= cfg.referenceDate));
@@ -193,7 +193,6 @@ export function runPipeline(raw: RawDataset, cfg: Config, opts: { includeDaily?:
   return {
     id: fnv1a(`${generatedAt}|${skus.length}|${sales.length}|${raw.stock.length}|${raw.purchases.length}`),
     generatedAt,
-    source: opts.source ?? "default",
     config: cfg,
     skus,
     suppliers,

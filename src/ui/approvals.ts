@@ -11,7 +11,7 @@ export interface StoredApprovals {
   edits: Record<string, LineEdit>;
   agentState?: AgentState;
   /** Última resposta do agente, para reexibir depois de recarregar a página. */
-  agentRun?: { message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] };
+  agentRun?: { request?: string; message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] };
 }
 
 const KEY = "gostock:approvals";

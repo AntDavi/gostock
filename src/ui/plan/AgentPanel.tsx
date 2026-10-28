@@ -6,10 +6,11 @@ import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AgentState } from "@/agent/session";
+import { DEFAULT_REQUEST } from "@/agent/prompt";
 import { summarizeChanges } from "@/core/plan/risk";
 import { Notice } from "../kit";
 
-export type AgentRun = { status: "idle" } | { status: "running"; started: number } | { status: "error"; message: string };
+export type AgentRun = { status: "idle" } | { status: "running"; started: number; request: string } | { status: "error"; message: string };
 
 const TOOL_LABEL: Record<string, string> = {
   resumo_plano: "Leu o resumo do plano",
@@ -40,7 +41,7 @@ interface Props {
   state: AgentState;
   revised: boolean;
   run: AgentRun;
-  lastRun: { message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] } | null;
+  lastRun: { request?: string; message: string; unverified: string[]; steps: { tool: string; ok: boolean }[] } | null;
   onlyChanged: boolean;
   onToggleOnlyChanged(): void;
   onRun(): void;
@@ -73,9 +74,12 @@ export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggle
           {run.status === "running" ? (
             <>
               <h2 className="font-semibold">
-                O agente está revisando o plano… <Elapsed started={run.started} />
+                {run.request === DEFAULT_REQUEST ? "O agente está revisando o plano…" : "O agente está trabalhando no seu pedido…"} <Elapsed started={run.started} />
               </h2>
-              <p className="text-sm text-foreground/75">Lê o resumo e os casos críticos e só altera o plano por ferramentas que validam as regras. Costuma levar de 20 a 60 segundos.</p>
+              <p className="text-sm text-foreground/75">
+                {run.request === DEFAULT_REQUEST ? "Revisando os casos críticos." : <>Pedido: “{run.request}”.</>} Ele só altera o plano por ferramentas que validam as regras. Costuma levar de 20 a 60
+                segundos; a tabela continua disponível.
+              </p>
             </>
           ) : revised ? (
             <>
@@ -88,7 +92,8 @@ export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggle
             <>
               <h2 className="font-semibold">Plano base montado pelo código</h2>
               <p className="text-sm text-foreground/75">
-                O agente revisa os casos críticos: lead time instável antes da campanha, POs atrasados e SKUs A sem cobertura. Toda mudança passa pelo validador e aparece aqui com antes → depois.
+                Clique em revisar e o agente ajusta os casos críticos (lead time instável antes da campanha, POs atrasados, SKUs A sem cobertura). Ou escreva um pedido na barra do rodapé. Toda
+                mudança passa pelo validador e aparece aqui com antes → depois.
               </p>
             </>
           )}
@@ -97,6 +102,11 @@ export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggle
           {revised && run.status !== "running" && changes.some((c) => c.lineId) && (
             <Button variant="outline" aria-pressed={onlyChanged} onClick={onToggleOnlyChanged} className="bg-card">
               {onlyChanged ? "Mostrar todas" : "Ver só alteradas"}
+            </Button>
+          )}
+          {revised && run.status !== "running" && (
+            <Button variant="outline" onClick={onRun} className="bg-card">
+              <BotIcon data-icon="inline-start" /> Refazer revisão
             </Button>
           )}
           {revised && run.status !== "running" && (
@@ -128,20 +138,30 @@ export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggle
       )}
 
       {revised && lastRun && run.status !== "running" && (
+        <div className="space-y-3 px-5 pb-5">
+          {lastRun.request && lastRun.request !== DEFAULT_REQUEST && (
+            <p className="text-sm">
+              <span className="text-muted-foreground">Você pediu:</span> “{lastRun.request}”
+            </p>
+          )}
+          {partial && <Notice tone="warn">A revisão foi interrompida no meio. Os ajustes já passaram pelo validador e foram mantidos.</Notice>}
+          <div className="rounded-xl bg-card p-4 text-sm whitespace-pre-line">{lastRun.message}</div>
+          {lastRun.unverified.length > 0 && (
+            <Notice tone="warn">
+              <strong className="font-semibold">Números não verificados:</strong> {lastRun.unverified.join(", ")}. Não vieram de nenhuma ferramenta e podem estar errados.
+            </Notice>
+          )}
+        </div>
+      )}
+
+      {revised && lastRun && run.status !== "running" && (
         <div className="border-t border-primary/10">
           <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium hover:bg-accent">
-            O que o agente mudou e por quê ({changes.length})
+            Mudanças com antes → depois e passos do agente ({changes.length})
             <ChevronDownIcon className={cn("size-4 transition-transform", open && "rotate-180")} />
           </button>
           {open && (
             <div className="space-y-4 px-5 pb-5">
-              {partial && <Notice tone="warn">A revisão foi interrompida no meio. Os ajustes abaixo já passaram pelo validador e foram mantidos.</Notice>}
-              <div className="rounded-xl bg-card p-4 text-sm whitespace-pre-line">{lastRun.message}</div>
-              {lastRun.unverified.length > 0 && (
-                <Notice tone="warn">
-                  <strong className="font-semibold">Números não verificados:</strong> {lastRun.unverified.join(", ")}. Não vieram de nenhuma ferramenta e podem estar errados.
-                </Notice>
-              )}
               {changes.length > 0 && (
                 <ul className="divide-y divide-hairline overflow-hidden rounded-xl bg-card">
                   {changes.map((c) => (

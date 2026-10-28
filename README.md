@@ -10,9 +10,36 @@ Um **agente de IA (Claude Haiku 5.5)** revisa o plano montado pelo código. Ele 
 - **Aplicação:** _link do Vercel_
 - **Código:** este repositório
 
+**Neste documento:** [Como usar](#como-usar) · [As cinco perguntas](#as-cinco-perguntas-com-os-números) · [Como funciona por dentro](#como-funciona-por-dentro) · [Como o agente funciona](#como-o-agente-funciona) · [Método](#método) · [Premissas e limitações](#premissas-e-limitações) · [Como rodar](#como-rodar) · [Publicação](#publicação-no-vercel) · [Manutenção](#manutenção) · [Solução de problemas](#solução-de-problemas) · [Arquitetura](#arquitetura)
+
+## Como usar
+
+O app não traz dados. Tudo parte dos CSVs do seu estoque.
+
+1. **Envie os dados.** Em **Dados**, arraste os cinco arquivos e clique em **Processar**. O processamento roda no seu navegador e leva alguns segundos (cerca de 3 s com os dados do desafio). Os arquivos não vão a nenhum servidor. O resultado fica salvo neste navegador, e recarregar a página não apaga.
+2. **Leia o diagnóstico.** A **Visão geral** mostra primeiro o que precisa de atenção: SKUs que rompem antes da Black Friday, excesso e POs atrasados. Depois vêm os indicadores e a curva orçamento × nível de serviço.
+3. **Revise o plano de compras.** Em **Plano de compras**, o código já montou um plano dentro do orçamento. Clique em **Revisar com o agente** para ele ajustar os casos críticos, ou escreva um pedido na barra do rodapé (há sugestões prontas). O que o agente mudou aparece destacado, com antes → depois e o motivo.
+4. **Decida linha a linha.** Aprove, edite ou recuse cada pedido, ou selecione vários de uma vez. Exporte os aprovados em CSV.
+5. **Liquide o parado.** Em **Liquidação**, escolha o desconto por SKU (10% a 40%) e exporte a lista.
+6. **Ajuste os parâmetros.** Em **Dados**, mude orçamento, metas de serviço, janela e campanhas e clique em **Aplicar ao plano**. As telas recalculam na hora.
+
+**Estoque** (busca, filtros e ficha de cada SKU) e **Fornecedores** (lead time e POs em aberto) servem para investigar um caso específico.
+
+### Formato dos CSVs
+
+| Arquivo | Colunas obrigatórias |
+|---|---|
+| `skus.csv` | `sku`, `marca`, `descricao`, `categoria`, `status`, `custo_unitario`, `preco_venda`, `fornecedor`, `unidade_compra`, `moq` |
+| `vendas_diarias.csv` | `sku`, `data`, `unidades_vendidas`, `receita` |
+| `estoque_diario.csv` | `sku`, `data`, `estoque_disponivel` |
+| `compras.csv` | `po_id`, `fornecedor`, `sku`, `data_pedido`, `data_recebimento`, `quantidade`, `unidade` |
+| `fornecedores.csv` | `fornecedor`, `nome_fornecedor` |
+
+O nome do arquivo precisa ser exatamente esse. Se faltar coluna, a tela diz qual arquivo e qual coluna. `data_recebimento` vazia marca o PO como em aberto. `unidade_compra = cx 12 un` faz o lote e a quantidade valerem em caixas de 12.
+
 ## As cinco perguntas, com os números
 
-Dados do desafio, referência 29/09/2026. Todos os números aparecem na aplicação e vêm de `npm run data` (ver [Como rodar](#como-rodar)).
+Dados do desafio, referência 29/09/2026. Todos os números aparecem na aplicação depois de enviar os CSVs do desafio em Dados (ver [Como rodar](#como-rodar)).
 
 ### 1. Quanto capital está parado hoje, e em quê?
 
@@ -43,7 +70,7 @@ O **plano padrão** tem **135 pedidos, R$ 1.969.975** (dentro de R$ 1.970.000), 
 - **Sem pedido novo**, 17 SKUs rompem antes da Black Friday (20/11), já contando os 90 POs em aberto.
 - **O que o agente acrescenta:** numa execução real, antecipou para 01/10 as emissões do F05 (mediana de 32 dias, P90 de 75). Também antecipou linhas de SKUs com PO atrasado, sem custo extra. E apontou, sem cortar outros SKUs A para isso, três SKUs A sem pedido que rompem antes da BF e que o orçamento não cobre.
 
-Na aplicação: Plano de compras (botão "Gerar plano de compras com o agente" na Visão geral).
+Na aplicação: Plano de compras (ou o botão "Gerar plano com o agente" na Visão geral).
 
 ### 4. O que fazer com o estoque que não gira?
 
@@ -68,6 +95,31 @@ Com R$ 1,97 mi não dá para chegar à meta de 98%. O ganho marginal é alto at�
 
 Na aplicação: Visão geral, gráfico "Orçamento × nível de serviço". Em Dados, dá para mudar orçamento e metas e ver o plano recalculado.
 
+## Como funciona por dentro
+
+```
+Navegador                                                     Servidor (Vercel)
+─────────                                                     ─────────────────
+CSVs ─► Web Worker: pipeline ─► resumo por SKU ─► IndexedDB
+                                     │
+                                     ├─► Web Worker: cálculos de tela
+                                     │     (plano base, curvas, rupturas)
+                                     │
+                                     └─► resumo enxuto ───────► /api/agent
+                                                                 Claude + ferramentas
+                                         plano revisado ◄─────── + validador
+                                              │
+                          aprovações e edições ─► localStorage
+```
+
+1. **Upload.** O navegador lê os cinco CSVs e os entrega a um Web Worker (`src/workers/pipeline.worker.ts`). Ele roda o pipeline do núcleo: limpeza, demanda corrigida, lead times, métricas. Sai um resumo por SKU (o `Dataset`; com os dados do desafio, ~2 MB sem o histórico diário).
+2. **Persistência.** O resumo e a configuração aplicada ficam no IndexedDB (`src/ui/storedDataset.ts`). Os CSVs brutos não são guardados.
+3. **Cálculos de tela.** Plano base, curva orçamento × serviço e datas de ruptura são contas pesadas (até ~2 s). Rodam em outro Web Worker (`src/workers/compute.worker.ts`, via o hook `useCompute`), uma vez por combinação de dados e configuração, e são compartilhados entre as telas.
+4. **Agente.** No Plano, o navegador manda ao servidor o resumo sem histórico (`stripForAgent`, para caber no limite de 4,5 MB do Vercel) e o estado atual do plano. A rota `/api/agent` roda o agente e devolve o plano revisado. O servidor não guarda nada entre chamadas.
+5. **Decisões do usuário.** Aprovações, recusas, edições e a última revisão do agente ficam no `localStorage`, numa chave ligada ao dataset e à configuração. Trocar os dados ou mudar a configuração começa um plano novo. As decisões antigas nunca são aplicadas ao plano errado, e o navegador guarda as de um plano só.
+
+O **núcleo** (`src/core/`) é TypeScript puro, sem I/O nem APIs de Node ou do navegador. Por isso o mesmo código roda no Web Worker, no servidor (ferramentas do agente) e no script `npm run data`.
+
 ## Como o agente funciona
 
 > O código monta o plano, o agente julga, o validador decide.
@@ -81,7 +133,7 @@ Na aplicação: Visão geral, gráfico "Orçamento × nível de serviço". Em Da
    - recompra de descontinuado;
    - desconto acima de 40%.
 4. **Guarda de números:** antes de mostrar o resumo do agente, o código confere cada número do texto contra as saídas das ferramentas. O que não confere aparece como "Números não verificados".
-5. **A tela mostra o que mudou:** antes → depois e o motivo de cada ajuste, linha a linha.
+5. **A tela mostra o que mudou:** antes → depois e o motivo de cada ajuste, linha a linha, com a etiqueta do agente. O painel mostra o pedido feito e a resposta; "Ver só alteradas" filtra a tabela e "Voltar ao plano base" desfaz a revisão.
 
 **Funciona sem o LLM.** Se a API falhar, o plano base continua válido e visível. Se a falha vier no meio da revisão, os ajustes já validados ficam, com o aviso "Revisão parcial".
 
@@ -108,12 +160,12 @@ O modelo fica atrás de uma interface (`ChatClient`, em `src/agent/run.ts`); tro
 - **Uma só amostra de BF e Natal (2025).** O efeito de campanha de 2026 é o de 2025, medido relativo à base da época.
 - **Desconto confundido com campanha.** Os únicos descontos do histórico são os da BF 2025. A resposta ao preço atribui 50% do ganho da BF ao desconto; o parâmetro é editável em Dados.
 - **O fill esperado do plano não é recalculado** depois de edições e recusas manuais na tela. A tela avisa quando isso acontece.
-- **Dados no repositório.** Por confidencialidade, o repositório não traz os CSVs nem o PDF do desafio, só o agregado `src/data/dataset.json`. Ele tem histórico semanal por SKU e indicadores, sem custo nem preço unitário crus. O histórico diário só aparece quando o usuário envia os CSVs, e fica no navegador dele.
-- **Upload só nesta aba.** Os CSVs enviados são processados no navegador e não vão a nenhum servidor; ao recarregar a página, voltam os dados padrão. O agente recebe só o resumo por SKU.
+- **Sem dados no repositório.** Por confidencialidade, o repositório e o app publicado não trazem os CSVs, o PDF nem agregados do desafio. O app abre vazio e pede o upload.
+- **Upload no navegador.** Os CSVs enviados são processados no navegador e não vão a nenhum servidor. O resumo fica salvo neste navegador (IndexedDB) até você remover em Dados. O agente recebe só o resumo por SKU.
 
 ## Como rodar
 
-Requer Node.js 20+.
+Requer Node.js 20 ou mais novo (desenvolvido no 24).
 
 ```bash
 npm install
@@ -123,7 +175,7 @@ npm run dev                  # http://localhost:3000
 
 Sem `ANTHROPIC_API_KEY`, a aplicação funciona normalmente e o painel do agente avisa que ele está indisponível.
 
-Para regerar o agregado a partir dos CSVs do desafio, coloque-os em `case_estoque/` (pasta fora do git) e rode:
+Abra o app, vá em **Dados** e envie os cinco CSVs. Para conferir os números no terminal sem abrir o app, coloque os CSVs em `case_estoque/` (pasta fora do git) e rode o comando abaixo. Ele imprime os indicadores de referência e não grava nada:
 
 ```bash
 npm run data
@@ -145,13 +197,67 @@ Variáveis de ambiente (só no servidor):
 | `ANTHROPIC_API_KEY` | — | Chave da API do Claude |
 | `ANTHROPIC_MODEL` | `claude-haiku-5-5` | Modelo do agente |
 
+## Publicação no Vercel
+
+1. Importe o repositório no Vercel (framework Next.js, sem configuração extra).
+2. Em **Settings → Environment Variables**, defina `ANTHROPIC_API_KEY` (e, se quiser, `ANTHROPIC_MODEL`).
+3. Publique. O link é público e sem login. Cada pessoa que abrir envia os próprios CSVs, que ficam só no navegador dela.
+
+A rota do agente declara `maxDuration = 120` s e o loop do agente para em 100 s. Se o plano do Vercel limitar funções a menos tempo, revisões longas terminam como "Revisão parcial".
+
+## Manutenção
+
+### Onde mexer
+
+| Para… | Mexa em | E também |
+|---|---|---|
+| Mudar um padrão de negócio (orçamento, janela, campanhas, custos, metas, teto de desconto) | `src/core/config.ts` (`defaultConfig`) | O usuário também muda na tela Dados. Não espalhe constantes pelo código. |
+| Criar ou mudar uma regra de negócio | `src/core/plan/validate.ts` | Teste em `tests/core/plan/validate.test.ts`. A regra vale no código, nunca só no prompt. |
+| Mudar como a demanda é estimada | `src/core/demand.ts` | Testes em `tests/core/demand.test.ts`; rode `npm run data` e confira os números de referência. |
+| Aceitar outro formato de CSV | `src/core/load.ts` (colunas em `FILES`) | Teste em `tests/core/load.test.ts`; atualize a tabela de formato acima. |
+| Criar ou mudar uma ferramenta do agente | `src/agent/tools.ts` | O nome em `TOOL_LABEL` (`src/ui/plan/AgentPanel.tsx`), o prompt em `src/agent/prompt.ts` e teste em `tests/agent/tools.test.ts`. Toda escrita no plano passa pelo validador. |
+| Mudar as sugestões de pedido ao agente | `SUGGESTIONS` em `src/ui/plan/PromptBar.tsx` | Só sugira o que as ferramentas sabem atender. |
+| Trocar o modelo ou o provedor de LLM | `ANTHROPIC_MODEL`, ou um novo adaptador de `ChatClient` (`src/agent/run.ts`) | O adaptador atual é `src/agent/claude.ts`. O Haiku 5.5 rejeita `temperature` e prefill, e os blocos de thinking precisam voltar intactos. |
+| Adicionar um componente de UI | `npx shadcn@latest add <nome>` | Estilo `base-nova` (Base UI): use `render={<Link …/>}` com `nativeButton={false}`, não `asChild`. |
+| Mudar cores ou tokens | `src/app/globals.css` | Cor só para estado (vermelho = ruptura, âmbar = excesso), sem verde; ameixa só para interação. |
+| Mudar o formato do `Dataset` | `src/core/types.ts` e `src/core/pipeline.ts` | Dados já salvos nos navegadores ficam no formato antigo. Peça para remover e reenviar em Dados, ou valide a forma ao ler em `src/ui/storedDataset.ts`. |
+
+### Antes de publicar uma mudança
+
+```bash
+npm test && npm run lint && npx next typegen && npx tsc --noEmit && npm run build
+```
+
+Depois, rode `npm run dev`, envie os CSVs do desafio em Dados e confira se a Visão geral e o Plano batem com os números de referência: estoque a custo R$ 6,78 mi, parado R$ 2,27 mi, venda perdida R$ 912 mil, 135 pedidos, R$ 1.969.975, fill esperado de 89,5%. O teste do agente com o LLM real é manual.
+
+### Testes
+
+Ficam em `tests/`, espelhando `src/` (`core/`, `core/plan/`, `agent/`, `ui/`). Usam fixtures pequenas e sintéticas (`tests/fixtures/mini.ts`), nunca os CSVs do desafio, que não estão no repositório. O pipeline, o motor de plano e o validador são escritos com o teste primeiro.
+
+### Dados confidenciais
+
+`case_estoque/`, o PDF do desafio e `.env*` estão no `.gitignore` e nunca entram no repositório. Nada de dados, nem agregados, vai para o git: o app depende só do upload.
+
+## Solução de problemas
+
+| Sintoma | Causa e o que fazer |
+|---|---|
+| Todas as telas pedem para enviar os CSVs | É o estado normal sem dados. Envie os cinco arquivos em Dados. |
+| "Não foi possível salvar neste navegador" | Aba anônima ou armazenamento bloqueado. O app funciona, mas ao recarregar será preciso enviar de novo. |
+| Erro ao processar, citando arquivo e coluna | Falta uma coluna obrigatória ou o arquivo está com outro nome. Veja [Formato dos CSVs](#formato-dos-csvs). |
+| "Agente indisponível: ANTHROPIC_API_KEY não configurada" | Defina a chave em `.env.local` (local) ou nas variáveis do Vercel. O plano base continua valendo. |
+| O agente demora ou devolve "Revisão parcial" | Limite de uso da API (429) ou tempo esgotado. Os ajustes já validados ficam. Tente de novo em alguns segundos. |
+| Aparecem "Números não verificados" | O agente escreveu números que nenhuma ferramenta devolveu. Não confie neles; os números da tabela continuam corretos. |
+| Aprovações sumiram | A configuração ou os dados mudaram, e isso começa um plano novo. O navegador guarda as decisões de um plano só: exporte os aprovados antes de mudar a configuração. |
+| Dados de outra pessoa ou versão antiga | Em Dados, clique em **Remover dados** e envie de novo. |
+
 ## Arquitetura
 
 ```
 CSVs ──► pipeline (TypeScript puro) ──► resumo por SKU (JSON)
           │                               │
-          ├ local: npm run data → src/data/dataset.json
-          └ upload: Web Worker no navegador
+          ├ upload: Web Worker no navegador → IndexedDB
+          └ local: npm run data (só imprime a conferência)
                                           ├ servidor: /api/agent (Claude + ferramentas + validador)
                                           └ navegador: Visão geral · Plano · Liquidação · Estoque · Fornecedores · Dados
 ```
@@ -159,9 +265,16 @@ CSVs ──► pipeline (TypeScript puro) ──► resumo por SKU (JSON)
 - `src/core/`: pipeline puro (carga, limpeza, lead time, demanda, métricas, liquidação), sem I/O nem APIs de Node ou do navegador.
 - `src/core/plan/`: simulação por SKU, estoque de segurança, alocação do orçamento, validador, casos críticos, curvas e exportação.
 - `src/agent/`: sessão, ferramentas, guarda de números, prompt e loop do agente.
-- `src/app/`: rotas Next.js (páginas e `/api/agent`, `/api/dataset`).
-- `src/ui/`: telas (shadcn + Recharts), provedor de dados e cálculos de tela, que rodam num Web Worker.
+- `src/app/`: rotas Next.js (páginas e `/api/agent`).
+- `src/ui/`: telas (shadcn + Recharts), provedor de dados (`DatasetProvider`, `storedDataset`), peças de tela (`kit.tsx`) e cálculos de tela.
+- `src/workers/`: Web Workers do upload (`pipeline.worker.ts`) e dos cálculos de tela (`compute.worker.ts`).
+- `scripts/check-data.ts`: conferência local (`npm run data`).
+- `tests/`: testes Vitest com fixtures sintéticas.
 
 Stack: Next.js 16 (App Router), TypeScript `strict`, Tailwind 4, shadcn, Recharts, Vitest, SDK da Anthropic.
 
-O documento de problema e design está em `docs/superpowers/specs/2026-10-27-gostock-design.md`.
+### Documentação
+
+- `docs/2026-10-27-gostock-design.md`: problema, decisões e o porquê (fonte da verdade). As seções 9 e 10 registram o que mudou depois da implementação.
+- `docs/2026-10-27-gostock.md`: plano de implementação original (histórico).
+- `CLAUDE.md`: regras do projeto, convenções e fatos do domínio para quem mantém o código (pessoas e agentes de IA).

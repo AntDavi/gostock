@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BotIcon, DownloadIcon } from "lucide-react";
+import { DownloadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AgentResult } from "@/agent/run";
@@ -17,7 +17,7 @@ import { validatePlan } from "@/core/plan/validate";
 import type { Config, Dataset, ISODate } from "@/core/types";
 import { approvalsKey, applyEdits, loadApprovals, saveApprovals, type Decision, type LineEdit, type StoredApprovals } from "../approvals";
 import { downloadCsv } from "../common/download";
-import { LoadError, PageHeader } from "../common/PageState";
+import { LoadError, NoData, PageHeader } from "../common/PageState";
 import { useDataset } from "../DatasetProvider";
 import { brl, dateBR, intBR, pct } from "../format";
 import { Meter, Stat } from "../kit";
@@ -83,12 +83,13 @@ export function PlanPage() {
 
   const askAgent = async (text: string) => {
     if (!ds || !agentState || run.status === "running") return;
-    setRun({ status: "running", started: Date.now() });
+    const request = text || DEFAULT_REQUEST;
+    setRun({ status: "running", started: Date.now(), request });
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ dataset: ds.source === "upload" ? stripForAgent(ds) : undefined, state: agentState, message: text || DEFAULT_REQUEST }),
+        body: JSON.stringify({ dataset: stripForAgent(ds), state: agentState, message: request }),
       });
       const r = (await res.json()) as AgentResult;
       if (!r.ok) {
@@ -100,7 +101,7 @@ export function PlanPage() {
         const touched = new Set(r.state.changes.slice(agentState.changes.length).map((c) => c.lineId).filter((x): x is string => !!x));
         const edits = Object.fromEntries(Object.entries(a.edits).filter(([id]) => !touched.has(id)));
         const decisions = Object.fromEntries(Object.entries(a.decisions).filter(([id]) => !touched.has(id)));
-        return { ...a, agentState: r.state, edits, decisions, agentRun: { message: r.message, unverified: r.unverified, steps: r.steps.map((s) => ({ tool: s.tool, ok: s.ok })) } };
+        return { ...a, agentState: r.state, edits, decisions, agentRun: { request, message: r.message, unverified: r.unverified, steps: r.steps.map((s) => ({ tool: s.tool, ok: s.ok })) } };
       });
       setRun({ status: "idle" });
     } catch {
@@ -123,7 +124,8 @@ export function PlanPage() {
 
   if (error) return <LoadError message={error} />;
   if (base.status === "error") return <LoadError title="Não foi possível montar o plano base" message={base.error} />;
-  if (!ds || !cfg || !current || !agentState || !lines) {
+  if (!ds) return <NoData />;
+  if (!cfg || !current || !agentState || !lines) {
     return (
       <div className="space-y-6" aria-busy="true">
         <Skeleton className="h-12 w-80" />
@@ -166,9 +168,6 @@ export function PlanPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Plano de compras" subtitle={`Emissões de ${dateBR(cfg.windowStart).slice(0, 5)} a ${dateBR(cfg.windowEnd)}. Aprove, edite ou recuse cada linha.`}>
-        <Button variant="outline" size="lg" disabled={run.status === "running"} onClick={() => void askAgent("")}>
-          <BotIcon data-icon="inline-start" /> {current.agentState ? "Refazer com o agente" : "Revisar com o agente"}
-        </Button>
         <Button size="lg" disabled={approved.length === 0 || exportErrors.length > 0} onClick={() => downloadCsv(`pedidos-gostock-${cfg.referenceDate}.csv`, planToCsv(approved, ds))}>
           <DownloadIcon data-icon="inline-start" /> Exportar aprovados ({approved.length})
         </Button>
@@ -242,7 +241,7 @@ export function PlanPage() {
         onEdit={edit}
       />
 
-      <PromptBar disabled={run.status === "running"} onSend={(t) => void askAgent(t)} />
+      <PromptBar running={run.status === "running" ? { started: run.started, request: run.request } : null} onSend={(t) => void askAgent(t)} />
     </div>
   );
 }

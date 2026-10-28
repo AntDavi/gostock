@@ -1,4 +1,5 @@
-// Gera src/data/dataset.json (agregado, sem dados crus) a partir dos CSVs em case_estoque/.
+// Roda o pipeline sobre os CSVs em case_estoque/ e imprime os números de conferência. Não grava nada:
+// o app não traz dados embutidos, eles vêm só do upload no navegador.
 import fs from "node:fs";
 import path from "node:path";
 import { defaultConfig } from "../src/core/config";
@@ -26,8 +27,6 @@ if (!loaded.data) {
   process.exit(1);
 }
 const ds = runPipeline(loaded.data, defaultConfig);
-const out = path.resolve("src/data/dataset.json");
-fs.writeFileSync(out, JSON.stringify(ds));
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 console.log(`SKUs: ${ds.kpis.skuCount} (ativos ${ds.kpis.activeCount})`);
@@ -37,4 +36,4 @@ console.log(`Venda perdida 12m: ${brl(ds.kpis.lostRevenue12m)}`);
 console.log(`Nível de serviço 12m: ${(ds.kpis.fillRate12m * 100).toFixed(1)}%`);
 console.log(`POs em aberto: ${ds.kpis.openPoCount} (atrasados ${ds.kpis.latePoCount})`);
 console.log(`Duplicatas removidas: ${ds.kpis.duplicatesRemoved}`);
-console.log(`Arquivo: ${out} (${(fs.statSync(out).size / 1e6).toFixed(2)} MB) em ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+console.log(`Resumo: ${(JSON.stringify(ds).length / 1e6).toFixed(2)} MB em ${((Date.now() - t0) / 1000).toFixed(1)} s`);

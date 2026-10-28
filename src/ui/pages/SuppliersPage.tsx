@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LoadError, PageHeader, PageSkeleton } from "../common/PageState";
+import { LoadError, PageHeader, NoData } from "../common/PageState";
 import { useDataset } from "../DatasetProvider";
 import { intBR } from "../format";
 import { isUnstable, UNSTABLE_RATIO } from "../inventory";
@@ -12,7 +12,7 @@ import { InfoTip, Notice, Section, Stat } from "../kit";
 export function SuppliersPage() {
   const { dataset: ds, error } = useDataset();
   if (error) return <LoadError message={error} />;
-  if (!ds) return <PageSkeleton />;
+  if (!ds) return <NoData />;
   const sup = ds.suppliers;
   const unstable = sup.filter((s) => isUnstable(s.leadTime));
   const open = sup.reduce((a, s) => a + s.openOrders, 0);

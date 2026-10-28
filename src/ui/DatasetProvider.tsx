@@ -1,57 +1,69 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { defaultConfig } from "@/core/config";
 import type { Config, Dataset } from "@/core/types";
+import { clearStoredDataset, loadStoredDataset, saveStoredDataset } from "./storedDataset";
 
 interface DatasetContext {
+  /** Só existe depois do upload. O app não traz dados embutidos. */
   dataset: Dataset | null;
-  config: Config | null;
+  /** Sem dataset, vale a configuração padrão (usada no formulário de Dados). */
+  config: Config;
+  /** Lendo o que ficou salvo no navegador. */
   loading: boolean;
+  /** false quando o navegador recusou guardar os dados (aba privada, armazenamento cheio). */
+  persisted: boolean;
   error: string | null;
   setConfig(c: Config): void;
   setUploaded(ds: Dataset): void;
-  resetToDefault(): void;
+  clearData(): void;
 }
 
 const Ctx = createContext<DatasetContext | null>(null);
 
 export function DatasetProvider({ children }: { children: ReactNode }) {
-  const [defaultDs, setDefaultDs] = useState<Dataset | null>(null);
-  const [uploaded, setUploadedDs] = useState<Dataset | null>(null);
-  const [config, setConfigState] = useState<Config | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [dataset, setDataset] = useState<Dataset | null>(null);
+  const [config, setConfigState] = useState<Config>(defaultConfig);
+  const [loading, setLoading] = useState(true);
+  const [persisted, setPersisted] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/dataset")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<Dataset>;
-      })
-      .then((ds) => {
-        if (!alive) return;
-        setDefaultDs(ds);
-        setConfigState((c) => c ?? ds.config);
-      })
-      .catch((e: unknown) => alive && setError(`Não foi possível carregar os dados padrão (${e instanceof Error ? e.message : String(e)}).`));
+    void loadStoredDataset().then((v) => {
+      if (!alive) return;
+      if (v) {
+        setDataset(v.dataset);
+        setConfigState(v.config);
+      }
+      setLoading(false);
+    });
     return () => {
       alive = false;
     };
   }, []);
 
   const setUploaded = useCallback((ds: Dataset) => {
-    setUploadedDs(ds);
+    setDataset(ds);
     setConfigState(ds.config);
+    void saveStoredDataset({ dataset: ds, config: ds.config }).then(setPersisted);
   }, []);
-  const resetToDefault = useCallback(() => {
-    setUploadedDs(null);
-    setConfigState(defaultDs?.config ?? null);
-  }, [defaultDs]);
+  const setConfig = useCallback(
+    (c: Config) => {
+      setConfigState(c);
+      if (dataset) void saveStoredDataset({ dataset, config: c }).then(setPersisted);
+    },
+    [dataset],
+  );
+  const clearData = useCallback(() => {
+    setDataset(null);
+    setConfigState(defaultConfig);
+    void clearStoredDataset();
+  }, []);
 
-  const dataset = uploaded ?? defaultDs;
   const value = useMemo<DatasetContext>(
-    () => ({ dataset, config, loading: !dataset && !error, error, setConfig: setConfigState, setUploaded, resetToDefault }),
-    [dataset, config, error, setUploaded, resetToDefault],
+    () => ({ dataset, config, loading, persisted, error: null, setConfig, setUploaded, clearData }),
+    [dataset, config, loading, persisted, setConfig, setUploaded, clearData],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

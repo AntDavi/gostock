@@ -84,14 +84,14 @@ function NavLinks({ pathname, onNavigate }: { pathname: string | null; onNavigat
 }
 
 function DataCard() {
-  const { dataset: ds } = useDataset();
-  if (!ds) return null;
+  const { dataset: ds, loading } = useDataset();
+  if (loading) return null;
   return (
     <div className="rounded-xl bg-secondary/70 p-3.5 text-sm">
-      <div className="font-semibold">{ds.source === "upload" ? "Dados enviados" : "Dados padrão"}</div>
-      <div className="text-muted-foreground">Referência {dateBR(ds.config.referenceDate)}</div>
+      <div className="font-semibold">{ds ? "Dados enviados" : "Sem dados"}</div>
+      <div className="text-muted-foreground">{ds ? `Referência ${dateBR(ds.config.referenceDate)}` : "Envie os CSVs para começar"}</div>
       <Link href="/dados" className="mt-1 inline-block font-medium text-primary underline">
-        {ds.source === "upload" ? "Trocar ou voltar ao padrão" : "Enviar meus CSVs"}
+        {ds ? "Trocar dados" : "Enviar CSVs"}
       </Link>
     </div>
   );
@@ -129,7 +129,9 @@ function Shell({ pathname, children }: { pathname: string | null; children: Reac
             </SheetContent>
           </Sheet>
         </header>
-        <main className="mx-auto w-full max-w-[1200px] flex-1 px-4 py-6 sm:px-8 sm:py-10">{children}</main>
+        <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-6 sm:px-8 sm:py-10">
+          {children}
+        </main>
       </div>
     </div>
   );

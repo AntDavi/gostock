@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2Icon, CircleIcon, Loader2Icon, RotateCcwIcon, UploadIcon, XCircleIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleIcon, Loader2Icon, Trash2Icon, UploadIcon, XCircleIcon } from "lucide-react";
 import { cn } from "cn";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,13 +26,13 @@ const FILES: { key: keyof CsvFiles; name: string }[] = [
 type Run = { status: "idle" } | { status: "running"; step: string } | { status: "error"; errors: string[] } | { status: "done"; warnings: string[]; seconds: number };
 
 export function DataPage() {
-  const { dataset: ds, config: cfg, error, setConfig } = useDataset();
+  const { dataset: ds, config: cfg, error, loading, setConfig } = useDataset();
   // Fica fora do formulário, que remonta quando o dataset muda: o aviso de sucesso sobrevive ao upload.
   const [run, setRun] = useState<Run>({ status: "idle" });
   if (error) return <LoadError message={error} />;
-  if (!ds || !cfg) return <PageSkeleton />;
+  if (loading) return <PageSkeleton />;
   // Remonta o formulário quando muda o dataset ou a configuração aplicada.
-  return <DataPageInner key={`${ds.id}:${JSON.stringify(cfg)}`} initial={cfg} onApply={setConfig} run={run} setRun={setRun} />;
+  return <DataPageInner key={`${ds?.id ?? "vazio"}:${JSON.stringify(cfg)}`} initial={cfg} onApply={setConfig} run={run} setRun={setRun} />;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -45,14 +45,13 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function DataPageInner({ initial, onApply, run, setRun }: { initial: Config; onApply(c: Config): void; run: Run; setRun(r: Run): void }) {
-  const { dataset: ds, config: cfg, setUploaded, resetToDefault } = useDataset();
+  const { dataset: ds, config: cfg, persisted, setUploaded, clearData } = useDataset();
   const [files, setFiles] = useState<Partial<Record<keyof CsvFiles, File>>>({});
   const [draft, setDraft] = useState<Config>(initial);
   const [unmatched, setUnmatched] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  if (!ds || !cfg) return null;
 
   const missing = FILES.filter((f) => !files[f.key]);
   const pendingUpload = Object.keys(files).length > 0;
@@ -99,7 +98,7 @@ function DataPageInner({ initial, onApply, run, setRun }: { initial: Config; onA
     worker.postMessage({ files: texts, config: draft });
   };
 
-  const k = ds.kpis;
+  const k = ds?.kpis;
   return (
     <div className="space-y-6">
       <PageHeader title="Dados e configuração" subtitle="Envie os CSVs do seu estoque ou ajuste os parâmetros do plano." />
@@ -109,24 +108,42 @@ function DataPageInner({ initial, onApply, run, setRun }: { initial: Config; onA
           <Section
             title={
               <span className="flex items-center gap-2">
-                Dados em uso <Badge variant="secondary">{ds.source === "upload" ? "enviados" : "padrão"}</Badge>
+                Dados em uso <Badge variant="secondary">{ds ? "enviados" : "nenhum"}</Badge>
               </span>
             }
             actions={
-              ds.source === "upload" ? (
-                <Button variant="outline" size="sm" onClick={resetToDefault}>
-                  <RotateCcwIcon data-icon="inline-start" /> Voltar ao padrão
+              ds ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    clearData();
+                    setRun({ status: "idle" });
+                  }}
+                >
+                  <Trash2Icon data-icon="inline-start" /> Remover dados
                 </Button>
               ) : undefined
             }
           >
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <Fact label="Referência" value={dateBR(cfg.referenceDate)} />
-              <Fact label="SKUs" value={`${intBR(k.skuCount)} (${intBR(k.activeCount)} ativos)`} />
-              <Fact label="Estoque a custo" value={brl(k.stockValue, true)} />
-              <Fact label="POs em aberto" value={intBR(k.openPoCount)} />
-            </dl>
-            <p className="mt-3 text-xs text-muted-foreground">{intBR(k.duplicatesRemoved)} linhas de venda duplicadas removidas</p>
+            {k ? (
+              <>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+                  <Fact label="Referência" value={dateBR(cfg.referenceDate)} />
+                  <Fact label="SKUs" value={`${intBR(k.skuCount)} (${intBR(k.activeCount)} ativos)`} />
+                  <Fact label="Estoque a custo" value={brl(k.stockValue, true)} />
+                  <Fact label="POs em aberto" value={intBR(k.openPoCount)} />
+                </dl>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {intBR(k.duplicatesRemoved)} linhas de venda duplicadas removidas ·{" "}
+                  {persisted ? "salvos neste navegador" : "não foi possível salvar neste navegador: ao recarregar, será preciso enviar de novo"}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhum dado carregado. Envie os cinco CSVs abaixo: o processamento roda no seu navegador e pode levar alguns segundos. O resultado fica salvo neste navegador até você remover.
+              </p>
+            )}
           </Section>
 
           <Section title="Enviar CSVs" description="Processados no navegador, sem envio a servidor. O agente recebe só o resumo por SKU.">
@@ -199,7 +216,7 @@ function DataPageInner({ initial, onApply, run, setRun }: { initial: Config; onA
                     <Link href="/" className="font-medium text-primary underline">
                       Ver a visão geral
                     </Link>
-                    . Os dados ficam só nesta aba: ao recarregar a página, voltam os dados padrão.
+                    . O resumo fica salvo neste navegador: recarregar a página não apaga.
                   </p>
                   {run.warnings.length > 0 && (
                     <ul className="mt-1 list-disc pl-4 text-foreground/80">

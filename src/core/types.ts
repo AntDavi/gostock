@@ -136,7 +136,6 @@ export interface Kpis {
 export interface Dataset {
   id: string;
   generatedAt: string;
-  source: "default" | "upload";
   config: Config;
   skus: SkuSummary[];
   suppliers: SupplierSummary[];

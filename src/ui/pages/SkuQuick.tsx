@@ -12,8 +12,8 @@ import { SkuHistoryChart, type HistoryPoint } from "../charts/SkuHistoryChart";
 import { brl, dateBR, intBR } from "../format";
 import { isUnstable, skuSituation } from "../inventory";
 import { Notice } from "../kit";
+import { NO_DEMAND_COVERAGE } from "@/core/metrics";
 
-const NO_DEMAND = 9999;
 
 function Tile({ label, value, tone }: { label: string; value: string; tone?: "danger" | "warn" }) {
   return (
@@ -52,7 +52,7 @@ export function SkuQuick({ s, ds, cfg, plan }: { s: SkuSummary; ds: Dataset; cfg
         </Badge>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <Tile label="Cobertura" value={s.metrics.coverageDays >= NO_DEMAND ? "sem demanda" : `${intBR(s.metrics.coverageDays)} d`} tone={situation === "ruptura" ? "danger" : situation === "excesso" ? "warn" : undefined} />
+        <Tile label="Cobertura" value={s.metrics.coverageDays >= NO_DEMAND_COVERAGE ? "sem demanda" : `${intBR(s.metrics.coverageDays)} d`} tone={situation === "ruptura" ? "danger" : situation === "excesso" ? "warn" : undefined} />
         <Tile label="Ruptura sem pedido novo" value={noOrder?.stockoutDate ? dateBR(noOrder.stockoutDate) : "—"} tone={situation === "ruptura" ? "danger" : undefined} />
         <Tile label="Valor em estoque" value={brl(s.metrics.stockValue)} />
         <Tile label={`Lead time ${s.supplier}`} value={`${intBR(lt.median)} d · P90 ${intBR(lt.p90)} d`} />

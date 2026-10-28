@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { diffDays } from "@/core/dates";
 import type { BudgetPoint } from "@/core/plan/curve";
 import { BudgetCurveChart } from "./charts/BudgetCurveChart";
-import { LoadError, PageHeader } from "./common/PageState";
+import { LoadError, NoData, PageHeader } from "./common/PageState";
 import { useDataset } from "./DatasetProvider";
 import { brl, dateBR, intBR, pct } from "./format";
 import { Meter, Section, Stat } from "./kit";
@@ -23,7 +23,8 @@ export function Overview() {
   const ov = useCompute("overview", ds, cfg);
 
   if (error) return <LoadError message={error} />;
-  if (!ds || !cfg) return <OverviewSkeleton />;
+  if (!ds) return <NoData />;
+  if (!cfg) return <OverviewSkeleton />;
 
   const k = ds.kpis;
   const campaign = firstCampaign(cfg);
