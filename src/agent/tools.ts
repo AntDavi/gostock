@@ -1,6 +1,7 @@
 import { addDays } from "@/core/dates";
 import { leadTimeFor, serviceLevelFor, type PlanLine } from "@/core/plan/allocate";
 import { findCriticalCases, type CriticalCase } from "@/core/plan/critical";
+import { p90CampaignRisk } from "@/core/plan/risk";
 import { simulateSku } from "@/core/plan/simulate";
 import { validateDiscount, validateLine, validatePlan, type ValidationError } from "@/core/plan/validate";
 import type { Scenario } from "@/core/types";
@@ -21,11 +22,17 @@ const motivo = { type: "string", description: "Por que, citando números obtidos
 const schema = (props: Record<string, object>, required: string[]) => ({ type: "object", properties: props, required, additionalProperties: false });
 
 export const toolDefs: ToolDef[] = [
-  { name: "resumo_plano", description: "Totais do plano atual: custo, orçamento, orçamento restante, fill esperado, linhas por origem e não financiadas.", parameters: schema({}, []) },
+  { name: "resumo_plano", description: "Totais do plano atual: custo, orçamento, orçamento restante, fill esperado, linhas por origem e não financiadas, e risco_p90 (linhas que chegam depois da campanha se o fornecedor demorar o P90, agora e no plano base).", parameters: schema({}, []) },
   {
     name: "listar_casos_criticos",
     description: "Casos que pedem julgamento, do mais grave ao menos grave (padrão 12, máx. 20). Filtre por tipo para ver mais de um tipo.",
     parameters: schema({ tipo: { type: "string", enum: ["stockout_before_campaign", "leadtime_campaign", "budget_cut", "late_po", "short_history"] }, limite: { type: "integer", minimum: 1, maximum: 20 }, por_tipo: { type: "integer", minimum: 1, maximum: 5, description: "Até N casos de cada tipo." } }, []),
+  },
+  {
+    name: "listar_risco_p90",
+    description:
+      "Todos os pedidos do plano que chegam antes da campanha pela mediana do fornecedor e depois dela pelo P90, do maior custo para o menor. Cada um traz emissao_sugerida (a data mais tardia em que a chegada pelo P90 ainda cai antes da campanha; null se nem o início da janela resolve), curva ABC e cobertura do SKU.",
+    parameters: schema({ limite: { type: "integer", minimum: 1, maximum: 60 } }, []),
   },
   { name: "consultar_sku", description: "Situação de um SKU: estoque, cobertura, demanda, lead time, POs em aberto, linhas no plano, projeção nas campanhas e opções de liquidação.", parameters: schema({ sku: str }, ["sku"]) },
   { name: "alterar_quantidade", description: "Muda a quantidade de uma linha do plano, em lotes (múltiplos do lote mínimo).", parameters: schema({ linha_id: str, lotes: { type: "integer", minimum: 1 }, motivo }, ["linha_id", "lotes", "motivo"]) },
@@ -111,6 +118,9 @@ function describeLine(l: PlanLine) {
 
 function summary(s: AgentSession) {
   const p = s.plan;
+  const risk = p90CampaignRisk(s.ds, s.config, p.lines);
+  const riskBase = p90CampaignRisk(s.ds, s.config, s.basePlan.lines);
+  const cuts = [...p.lines].filter((l) => l.origin === "base").sort((x, y) => x.priority - y.priority).slice(0, 8);
   return {
     linhas: p.lines.length,
     custo_total: r2(p.totalCost),
@@ -123,15 +133,15 @@ function summary(s: AgentSession) {
     linhas_nao_financiadas: p.unfunded.length,
     custo_nao_financiado: r2(p.unfunded.reduce((a, l) => a + l.cost, 0)),
     mudancas: s.changes.length,
-    candidatos_corte: [...p.lines]
-      .filter((l) => l.origin === "base")
-      .sort((x, y) => x.priority - y.priority)
-      .slice(0, 8)
-      .map((l, _i, arr) => {
-        const k = s.ds.skus.find((x) => x.sku === l.sku);
-        const acc = arr.slice(0, arr.indexOf(l) + 1).reduce((t, x) => t + x.cost, 0);
-        return { id: l.id, sku: l.sku, abc: k?.abc, cobertura_dias: k?.metrics.coverageDays, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost), custo_acumulado: r2(acc), prioridade: r4(l.priority) };
-      }),
+    // Caixa máximo para adições: orçamento restante + custo de todos os candidatos_corte (calculado aqui para o agente não somar).
+    caixa_se_cortar_candidatos: r2(p.budget - p.totalCost + cuts.reduce((a, l) => a + l.cost, 0)),
+    // Linhas que chegam antes da campanha pela mediana e depois dela pelo P90 do fornecedor.
+    risco_p90: { linhas: risk.lines, skus: risk.skus, custo: r2(risk.cost), sem_solucao: risk.unfixable, linhas_plano_base: riskBase.lines, custo_plano_base: r2(riskBase.cost) },
+    candidatos_corte: cuts.map((l, _i, arr) => {
+      const k = s.ds.skus.find((x) => x.sku === l.sku);
+      const acc = arr.slice(0, arr.indexOf(l) + 1).reduce((t, x) => t + x.cost, 0);
+      return { id: l.id, sku: l.sku, abc: k?.abc, cobertura_dias: k?.metrics.coverageDays, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost), custo_acumulado: r2(acc), prioridade: r4(l.priority) };
+    }),
   };
 }
 
@@ -156,6 +166,31 @@ type Handler = (s: AgentSession, a: Record<string, unknown>) => unknown;
 
 const handlers: Record<string, Handler> = {
   resumo_plano: (s) => summary(s),
+  listar_risco_p90: (s, a) => {
+    const limite = a.limite === undefined ? 60 : Math.min(60, reqPosInt(a, "limite"));
+    const risk = p90CampaignRisk(s.ds, s.config, s.plan.lines);
+    const bySku = new Map(s.ds.skus.map((k) => [k.sku, k]));
+    return {
+      total: risk.lines,
+      custo_total: r2(risk.cost),
+      sem_solucao: risk.unfixable,
+      pedidos: risk.items.slice(0, limite).map((i) => {
+        const k = bySku.get(i.sku);
+        return {
+          linha_id: i.lineId,
+          sku: i.sku,
+          abc: k?.abc,
+          cobertura_dias: k?.metrics.coverageDays,
+          campanha: i.campaign,
+          inicio_campanha: i.campaignStart,
+          emissao: i.emitBy,
+          chegada_p90: i.arrivalP90,
+          emissao_sugerida: i.suggestedEmit,
+          custo: r2(i.cost),
+        };
+      }),
+    };
+  },
 
   listar_casos_criticos: (s, a) => {
     const tipo = a.tipo === undefined ? undefined : reqStr(a, "tipo");

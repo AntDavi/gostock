@@ -16,14 +16,14 @@ Regras inegociáveis:
 Como trabalhar (o limite de uso do modelo é apertado, então seja econômico):
 - O pedido já vem com resumo_plano (inclui candidatos_corte: linhas de menor prioridade) e os casos críticos mais graves, cada um com cobertura e as linhas do SKU no plano. Use esses dados direto; só chame consultar_sku se faltar algo essencial (no máximo 2 vezes).
 - O plano base já usa o orçamento quase todo de forma otimizada pela margem. Seu maior valor está no RISCO que o código não pesa:
-  (a) leadtime_campaign: o pedido chega antes da campanha pela mediana, mas não pelo P90 do fornecedor. Antecipe a emissão (alterar_emissao); use se_emitir_no_inicio para saber se a chegada pelo P90 ainda cai antes da campanha. Não custa orçamento.
+  (a) Risco pelo P90: listar_risco_p90 traz TODOS os pedidos que chegam antes da campanha pela mediana, mas depois dela pelo P90 do fornecedor. Antecipe a emissão para a emissao_sugerida (alterar_emissao), que é a data mais tardia segura: não custa orçamento e evita estoque parado à toa. Priorize: antecipe todos os de curva A e B; nos de curva C, só se cobertura_dias for menor que 60. Pule os que têm emissao_sugerida null (sem solução) e diga quantos são.
   (b) stockout_before_campaign: se o SKU tem linha no plano, antecipe a emissão; se não tem, adicione 1 lote financiado por candidatos_corte.
   (c) budget_cut em SKU A: só troque se o SKU A rompe antes da campanha; financie removendo candidatos_corte de classe C.
   (d) late_po: o PO pode não chegar; considere antecipar a próxima linha do SKU.
-- Orçamento: cada caso traz custo_lote. Para financiar uma adição, remova candidatos_corte até que custo_acumulado + orcamento_restante cubra o custo dos lotes adicionados. Os cortes são aplicados antes das adições dentro de aplicar_ajustes.
+- Orçamento: cada caso traz custo_lote. caixa_se_cortar_candidatos é o máximo que dá para financiar cortando todos os candidatos_corte; se o lote for maior, não adicione e cite esse número. Para financiar uma adição, remova candidatos_corte até que custo_acumulado + orcamento_restante cubra o custo dos lotes adicionados. Os cortes são aplicados antes das adições dentro de aplicar_ajustes.
 - Não faça contas próprias no resumo nem nos motivos: cite os números e as datas como vieram das ferramentas. Nunca some lead time a uma data. Cada linha traz chegada (mediana) e chegada_p90, e cada caso traz se_emitir_no_inicio (chegadas se a emissão for no início da janela).
 - Escreva números e datas no formato brasileiro: R$ 1.234,56; frações como percentual (0,8947 → 89,47%); datas como 01/10/2026.
 - Campanhas: ${campaigns}.
-- Faça TODAS as alterações numa única chamada de aplicar_ajustes (no máximo 10 itens). Se algum item for recusado, corrija só ele numa segunda chamada.
-- Depois chame finalizar com um resumo de até 6 linhas em português do Brasil, dizendo o que mudou e por quê, citando só números das ferramentas.`;
+- Agrupe as alterações em chamadas de aplicar_ajustes de até 15 itens, começando pelos casos de maior custo; use no máximo 3 chamadas. Se algum item for recusado, não insista nele.
+- Depois chame finalizar com um resumo de até 6 linhas em português do Brasil, dizendo o que mudou e por quê, citando só números das ferramentas. Se você mexeu em datas de emissão, cite o risco_p90 devolvido por aplicar_ajustes: linhas_plano_base → linhas (e o custo exposto).`;
 }

@@ -72,7 +72,12 @@ export async function runAgent(session: AgentSession, userMessage: string, clien
   // Contexto inicial calculado pelo código: poupa duas rodadas do modelo.
   const resumo = callTool(session, "resumo_plano", {});
   const casos = callTool(session, "listar_casos_criticos", { por_tipo: INITIAL_PER_KIND });
-  steps.push({ tool: "resumo_plano", args: {}, ok: resumo.ok }, { tool: "listar_casos_criticos", args: { por_tipo: INITIAL_PER_KIND }, ok: casos.ok });
+  const riscoP90 = callTool(session, "listar_risco_p90", {});
+  steps.push(
+    { tool: "resumo_plano", args: {}, ok: resumo.ok },
+    { tool: "listar_casos_criticos", args: { por_tipo: INITIAL_PER_KIND }, ok: casos.ok },
+    { tool: "listar_risco_p90", args: {}, ok: riscoP90.ok },
+  );
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt(session) },
     {
@@ -80,7 +85,8 @@ export async function runAgent(session: AgentSession, userMessage: string, clien
       content:
         `Pedido do chefe de estoque: ${userMessage}\n\n` +
         `resumo_plano: ${JSON.stringify(resumo.result)}\n\n` +
-        `listar_casos_criticos (até ${INITIAL_PER_KIND} de cada tipo): ${JSON.stringify(casos.result)}`,
+        `listar_casos_criticos (até ${INITIAL_PER_KIND} de cada tipo): ${JSON.stringify(casos.result)}\n\n` +
+        `listar_risco_p90 (todos): ${JSON.stringify(riscoP90.result)}`,
     },
   ];
   let final: string | null = null;

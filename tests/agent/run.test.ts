@@ -36,7 +36,7 @@ describe("runAgent", () => {
     expect(r.ok).toBe(true);
     expect(r.message).toBe("Reduzi 1 linha.");
     expect(r.state.changes).toHaveLength(1);
-    expect(r.steps.map((x) => x.tool)).toEqual(["resumo_plano", "listar_casos_criticos", "resumo_plano", "alterar_quantidade", "finalizar"]);
+    expect(r.steps.map((x) => x.tool)).toEqual(["resumo_plano", "listar_casos_criticos", "listar_risco_p90", "resumo_plano", "alterar_quantidade", "finalizar"]);
   });
 
   test("system prompt, pedido e contexto inicial (resumo + casos críticos) vão na primeira chamada", async () => {
@@ -48,7 +48,7 @@ describe("runAgent", () => {
     expect(user.content).toContain("BF 20% maior");
     expect(user.content).toContain("custo_total");
     expect(user.content).toContain("casos");
-    expect(r.steps.slice(0, 2).map((x) => x.tool)).toEqual(["resumo_plano", "listar_casos_criticos"]);
+    expect(r.steps.slice(0, 3).map((x) => x.tool)).toEqual(["resumo_plano", "listar_casos_criticos", "listar_risco_p90"]);
   });
 
   test("histórico só cresce: cada chamada repete a anterior sem editar e devolve raw do assistente", async () => {
@@ -99,7 +99,7 @@ describe("runAgent", () => {
     const { client, requests } = scripted([call("remover_linha", { linha_id: "nao-existe", motivo: "x" }), call("finalizar", { resumo: "ok" })]);
     const r = await runAgent(createSession(ds), "x", client);
     expect(r.ok).toBe(true);
-    expect(r.steps[2]).toMatchObject({ tool: "remover_linha", ok: false });
+    expect(r.steps[3]).toMatchObject({ tool: "remover_linha", ok: false });
     const toolMsg = requests[1].find((m) => m.role === "tool")!;
     expect(toolMsg.content).toContain("erro");
     expect(toolMsg.tool_call_id).toBeDefined();
@@ -108,7 +108,7 @@ describe("runAgent", () => {
   test("argumentos com JSON inválido viram erro de ferramenta", async () => {
     const { client } = scripted([call("remover_linha", "{quebrado"), call("finalizar", { resumo: "ok" })]);
     const r = await runAgent(createSession(ds), "x", client);
-    expect(r.steps[2].ok).toBe(false);
+    expect(r.steps[3].ok).toBe(false);
   });
 
   test("429 → ok:false, estado igual ao de entrada", async () => {

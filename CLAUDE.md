@@ -45,13 +45,13 @@ Mapa do código:
 
 ### Arquitetura do agente
 
-- **Contexto inicial calculado pelo código:** a 1ª mensagem já traz `resumo_plano` (com `candidatos_corte` e custo acumulado) e `listar_casos_criticos` (3 de cada tipo, com custo do lote, lead time mediano e P90, e as linhas do SKU).
-- **Ajustes em lote:** o agente faz os ajustes numa chamada de `aplicar_ajustes`. Dentro do lote, cortes e reduções são aplicados antes das adições. Depois chama `finalizar`.
+- **Contexto inicial calculado pelo código:** a 1ª mensagem já traz `resumo_plano` (com `candidatos_corte`, custo acumulado, `caixa_se_cortar_candidatos` e `risco_p90` atual × plano base), `listar_casos_criticos` (3 de cada tipo, com custo do lote, lead time mediano e P90, e as linhas do SKU) e `listar_risco_p90` (todos os pedidos expostos, com `emissao_sugerida`).
+- **Ajustes em lote:** o agente faz os ajustes em até 3 chamadas de `aplicar_ajustes` de até 15 itens. Dentro do lote, cortes e reduções são aplicados antes das adições. Depois chama `finalizar`.
 - **Histórico só cresce:** nada é resumido nem editado (exigência do thinking e do cache de prompt, que fica ligado).
 - **Erros do modelo:** o SDK repete 429/5xx 2 vezes; depois disso o loop ainda espera o `retry-after` dentro do prazo de 100 s. Recusa (`stop_reason: refusal`) conta como falha do modelo.
 - **Falha no meio:** os ajustes já validados são mantidos com a mensagem "Revisão parcial", gerada pelo código. Sem nenhum ajuste, a rota responde `ok:false` e o plano base fica intacto.
 - **Guarda de números:** `numberGuard` confere cada número do resumo contra as saídas das ferramentas. A saída de `finalizar` não conta como fonte. Hífens tipográficos e milhar com espaço são normalizados.
-- **Onde está o valor:** o plano base já usa o orçamento de forma quase ótima pela margem. O ganho do agente está em risco que o código não pesa, como antecipar emissões quando a chegada pelo P90 do fornecedor cai depois do início da campanha.
+- **Onde está o valor:** o plano base já usa o orçamento de forma quase ótima pela margem e planeja pelo lead time mediano. O ganho do agente está no risco de cauda: antecipar emissões quando a chegada pelo P90 cai depois do início da campanha. Esse risco é medido por `p90CampaignRisk` (`src/core/plan/risk.ts`, mesma regra dos casos críticos) e aparece no painel do agente como antes → depois. Referência (dados reais): plano base 54 pedidos / R$ 824 mil expostos, 10 sem solução (F05); uma revisão real levou a 14 / R$ 80 mil.
 
 Parâmetros de negócio (orçamento, data de referência, janela, calendário, custos, teto de desconto) são **um objeto de configuração**, com padrão vindo de `case_estoque/parametros.md`. Não espalhe constantes como `1970000` ou `"2026-11-20"` pelo código.
 

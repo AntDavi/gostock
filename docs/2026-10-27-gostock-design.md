@@ -223,3 +223,9 @@ Prevalece sobre as seções anteriores onde houver conflito.
 - A barra de pedido no rodapé tem sugestões que enviam com um clique e mostra, enquanto o agente trabalha, o pedido enviado e o tempo decorrido.
 - Depois da resposta, o painel mostra o pedido ("Você pediu: …") e a resposta do agente sem precisar abrir nada. As mudanças com antes → depois e os passos ficam num bloco recolhível.
 
+**Risco pelo P90 (medido pelo código)**
+- O plano base e todos os indicadores (fill esperado, rupturas) usam o lead time **mediano**. O ganho principal do agente (antecipar emissões de fornecedor instável) não aparecia em nenhum número.
+- `p90CampaignRisk` (`src/core/plan/risk.ts`) conta os pedidos que chegam antes da campanha pela mediana e depois dela pelo P90, com o custo exposto e a **emissão sugerida** (a mais tardia em que a chegada pelo P90 cai antes da campanha; `null` quando nem o início da janela resolve). A regra é a mesma dos casos críticos `leadtime_campaign`.
+- O agente recebe a lista completa (`listar_risco_p90`) e prioriza: curvas A e B sempre; curva C só com cobertura abaixo de 60 dias. O painel mostra plano base → agora.
+- Dados reais: plano base **54 pedidos / R$ 824 mil** expostos (11 da BF, 43 do Natal), 10 sem solução (F05, P90 de 75 dias). Numa revisão real: **14 pedidos / R$ 80 mil**, sem mudar o custo do plano; os SKUs A que rompem antes da BF caíram de 5 para 4.
+

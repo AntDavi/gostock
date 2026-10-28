@@ -31,7 +31,7 @@ describe("toolDefs", () => {
     const names = toolDefs.map((t) => t.name);
     expect(names).toEqual(expect.arrayContaining([
       "resumo_plano", "listar_casos_criticos", "consultar_sku", "alterar_quantidade", "alterar_emissao",
-      "remover_linha", "adicionar_linha", "definir_nivel_servico", "aplicar_cenario", "propor_liquidacao", "finalizar",
+      "remover_linha", "adicionar_linha", "definir_nivel_servico", "aplicar_cenario", "propor_liquidacao", "finalizar", "listar_risco_p90",
     ]));
     toolDefs.forEach((t) => expect(t.parameters).toMatchObject({ type: "object" }));
   });
@@ -285,5 +285,47 @@ describe("registro de mudanças", () => {
     callTool(s, "alterar_emissao", { linha_id: l.id, data: defaultConfig.windowStart, motivo: "x" });
     const c = s.changes.at(-1)!;
     expect(c.after).toMatch(/emissão \d{2}\/\d{2}\/\d{4}, R\$ [\d.]+,\d{2}$/);
+  });
+});
+
+describe("risco_p90 no resumo", () => {
+  // F01 no fixture: mediana 15 d, P90 40 d. BF começa em 20/11.
+  test("emissão que perde a BF pelo P90 aumenta o risco; antecipar para o início da janela zera a linha", () => {
+    const s = fresh();
+    const l = s.plan.lines.find((x) => x.supplier === "F01")!;
+    expect(l).toBeDefined();
+    const before = callTool(s, "resumo_plano", {}).result as { risco_p90: { linhas: number; linhas_plano_base: number } };
+    expect(before.risco_p90.linhas).toBe(before.risco_p90.linhas_plano_base);
+
+    callTool(s, "alterar_emissao", { linha_id: l.id, data: "2026-10-20", motivo: "teste" });
+    const late = callTool(s, "resumo_plano", {}).result as { risco_p90: { linhas: number } };
+    callTool(s, "alterar_emissao", { linha_id: l.id, data: "2026-10-01", motivo: "teste" });
+    const early = callTool(s, "resumo_plano", {}).result as { risco_p90: { linhas: number; linhas_plano_base: number } };
+
+    expect(early.risco_p90.linhas).toBe(late.risco_p90.linhas - 1);
+    expect(early.risco_p90.linhas_plano_base).toBe(before.risco_p90.linhas_plano_base);
+  });
+});
+
+describe("listar_risco_p90", () => {
+  test("antecipar para a emissão sugerida tira o pedido da lista", () => {
+    const s = fresh();
+    const l = s.plan.lines.find((x) => x.supplier === "F01")!;
+    callTool(s, "alterar_emissao", { linha_id: l.id, data: "2026-10-20", motivo: "teste" });
+    const r = callTool(s, "listar_risco_p90", {}).result as { total: number; pedidos: { linha_id: string; emissao_sugerida: string | null }[] };
+    const item = r.pedidos.find((p) => p.linha_id === l.id)!;
+    expect(item.emissao_sugerida).not.toBeNull();
+    expect(callTool(s, "alterar_emissao", { linha_id: l.id, data: item.emissao_sugerida!, motivo: "teste" }).ok).toBe(true);
+    const after = callTool(s, "listar_risco_p90", {}).result as { total: number; pedidos: { linha_id: string }[] };
+    expect(after.total).toBe(r.total - 1);
+    expect(after.pedidos.some((p) => p.linha_id === l.id)).toBe(false);
+  });
+});
+
+describe("caixa_se_cortar_candidatos", () => {
+  test("é o orçamento restante mais o custo de todos os candidatos_corte", () => {
+    const r = callTool(fresh(), "resumo_plano", {}).result as { orcamento_restante: number; caixa_se_cortar_candidatos: number; candidatos_corte: { custo: number }[] };
+    const soma = r.candidatos_corte.reduce((a, c) => a + c.custo, 0);
+    expect(r.caixa_se_cortar_candidatos).toBeCloseTo(r.orcamento_restante + soma, 1);
   });
 });

@@ -11,7 +11,7 @@ import type { AgentState } from "@/agent/session";
 import { DEFAULT_REQUEST } from "@/agent/prompt";
 import { stripForAgent } from "@/core/pipeline";
 import { planToCsv } from "@/core/plan/export";
-import { campaignStockouts } from "@/core/plan/risk";
+import { campaignStockouts, p90CampaignRisk } from "@/core/plan/risk";
 import type { PlanLine } from "@/core/plan/allocate";
 import { validatePlan } from "@/core/plan/validate";
 import type { Config, Dataset, ISODate } from "@/core/types";
@@ -225,6 +225,7 @@ export function PlanPage() {
         onRun={() => void askAgent("")}
         onReset={resetAgent}
         onDismissError={() => setRun({ status: "idle" })}
+        risk={{ base: p90CampaignRisk(ds, cfg, agentState.basePlan.lines), now: p90CampaignRisk(ds, cfg, activeLines ?? lines) }}
       />
 
       <PlanTable

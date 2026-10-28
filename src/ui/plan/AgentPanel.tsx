@@ -7,14 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AgentState } from "@/agent/session";
 import { DEFAULT_REQUEST } from "@/agent/prompt";
-import { summarizeChanges } from "@/core/plan/risk";
-import { Notice } from "../kit";
+import { summarizeChanges, type P90Risk } from "@/core/plan/risk";
+import { brl, intBR } from "../format";
+import { InfoTip, Notice } from "../kit";
 
 export type AgentRun = { status: "idle" } | { status: "running"; started: number; request: string } | { status: "error"; message: string };
 
 const TOOL_LABEL: Record<string, string> = {
   resumo_plano: "Leu o resumo do plano",
   listar_casos_criticos: "Listou os casos críticos",
+  listar_risco_p90: "Listou os pedidos expostos ao P90",
   consultar_sku: "Consultou um SKU",
   aplicar_ajustes: "Aplicou ajustes em lote",
   alterar_quantidade: "Alterou quantidade",
@@ -47,6 +49,51 @@ interface Props {
   onRun(): void;
   onReset(): void;
   onDismissError(): void;
+  /** Pedidos que chegam antes da campanha pela mediana do fornecedor e depois dela pelo P90. */
+  risk: { base: P90Risk; now: P90Risk };
+}
+
+const pedidos = (n: number) => `${intBR(n)} pedido${n === 1 ? "" : "s"}`;
+
+/** O ganho do agente que os outros indicadores não mostram: eles usam a mediana do lead time. */
+function P90Strip({ risk, revised }: { risk: Props["risk"]; revised: boolean }) {
+  const { base, now } = risk;
+  if (!revised && base.lines === 0) return null;
+  const better = now.lines < base.lines;
+  const campaigns = [...new Set(base.items.map((i) => i.campaign))].join(" e ") || "a campanha";
+  return (
+    <div className="mx-5 mb-5 flex flex-col gap-2 rounded-xl bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        Podem chegar depois {campaigns === "a campanha" ? "da campanha" : `de ${campaigns}`} se o fornecedor demorar o P90
+        <InfoTip label="Sobre o risco pelo P90">
+          Pedidos que chegam antes do início da campanha pelo lead time mediano do fornecedor, mas depois dele pelo P90 (9 em cada 10 pedidos chegam até lá). O fill esperado e as rupturas usam a
+          mediana, então não mostram esse risco. Antecipar a emissão tira o pedido da lista sem gastar orçamento.
+        </InfoTip>
+      </div>
+      <div className="text-right tabular-nums">
+        {revised ? (
+          <div>
+            <span className="text-muted-foreground">
+              plano base {pedidos(base.lines)} · {brl(base.cost, true)}
+            </span>
+            <span className="mx-2 text-muted-foreground">→</span>
+            <span className={better ? "font-semibold text-primary" : "font-semibold"}>
+              agora {pedidos(now.lines)} · {brl(now.cost, true)}
+            </span>
+          </div>
+        ) : (
+          <div className="font-semibold">
+            {pedidos(base.lines)} · {brl(base.cost, true)}
+          </div>
+        )}
+        {(revised ? now : base).unfixable > 0 && (
+          <div className="text-xs text-muted-foreground">
+            {pedidos((revised ? now : base).unfixable)} sem solução: nem emitindo no início da janela o P90 do fornecedor chega a tempo
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Elapsed({ started }: { started: number }) {
@@ -59,7 +106,7 @@ function Elapsed({ started }: { started: number }) {
 }
 
 /** Revisão do agente: o que fez (resumo gerado pelo código), antes → depois de cada mudança e os estados da chamada. */
-export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggleOnlyChanged, onRun, onReset, onDismissError }: Props) {
+export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggleOnlyChanged, onRun, onReset, onDismissError, risk }: Props) {
   const [open, setOpen] = useState(false);
   const changes = state.changes;
   const partial = lastRun?.message.startsWith("Revisão parcial");
@@ -121,6 +168,8 @@ export function AgentPanel({ state, revised, run, lastRun, onlyChanged, onToggle
           )}
         </div>
       </div>
+
+      {run.status !== "running" && <P90Strip risk={risk} revised={revised} />}
 
       {run.status === "error" && (
         <div className="px-5 pb-5">

@@ -68,7 +68,8 @@ O **plano padrão** tem **135 pedidos, R$ 1.969.975** (dentro de R$ 1.970.000), 
 
 - **Como o orçamento é distribuído:** pela margem protegida por real investido, contando só a demanda até o fim da janela. Pedido que só serve janeiro fica por último.
 - **Sem pedido novo**, 17 SKUs rompem antes da Black Friday (20/11), já contando os 90 POs em aberto.
-- **O que o agente acrescenta:** numa execução real, antecipou para 01/10 as emissões do F05 (mediana de 32 dias, P90 de 75). Também antecipou linhas de SKUs com PO atrasado, sem custo extra. E apontou, sem cortar outros SKUs A para isso, três SKUs A sem pedido que rompem antes da BF e que o orçamento não cobre.
+- **O risco que o plano base não mede:** o plano usa o lead time **mediano** de cada fornecedor. Pelo **P90** (o prazo em que 9 de cada 10 pedidos chegam), **54 pedidos (R$ 824 mil) chegam antes da Black Friday ou do Natal pela mediana, mas depois deles no pior caso comum.** O fill esperado não mostra isso, porque também usa a mediana.
+- **O que o agente acrescenta:** numa execução real, o agente antecipou 40 desses pedidos para a data mais tardia segura, calculada pelo código, e o risco caiu para **14 pedidos (R$ 80 mil), sem gastar um real a mais do orçamento.** Ele priorizou as curvas A e B e deixou de fora os pedidos de curva C com mais de 60 dias de cobertura. Também explicou os 10 pedidos do F05 sem solução: nem emitindo no primeiro dia da janela o P90 de 75 dias chega a tempo. De quebra, os SKUs A que rompem antes da BF caíram de 5 para 4. Os três SKUs A restantes não têm pedido, e cada lote custa mais do que daria para liberar cortando outros: o agente os aponta como decisão de orçamento.
 
 Na aplicação: Plano de compras (ou o botão "Gerar plano com o agente" na Visão geral).
 
@@ -125,8 +126,8 @@ O **núcleo** (`src/core/`) é TypeScript puro, sem I/O nem APIs de Node ou do n
 > O código monta o plano, o agente julga, o validador decide.
 
 1. **O código calcula:** limpeza, demanda, estoque de segurança e um plano base quase ótimo pela margem.
-2. **O agente recebe esse contexto pronto:** o resumo do plano (com os candidatos a corte) e os casos críticos. Os casos são corte de orçamento, ruptura antes da campanha, lead time instável antes da BF, histórico curto e PO atrasado.
-3. **O agente age só por ferramentas** (`aplicar_ajustes`, `alterar_emissao`, `adicionar_linha`, `propor_liquidacao`…). Cada ferramenta passa pelo validador, que recusa e explica:
+2. **O agente recebe esse contexto pronto:** o resumo do plano (com os candidatos a corte e o risco pelo P90), os casos críticos e a lista completa de pedidos expostos ao P90, cada um com a data de emissão sugerida. Os casos são corte de orçamento, ruptura antes da campanha, lead time instável antes da BF, histórico curto e PO atrasado.
+3. **O agente age só por ferramentas** (`listar_risco_p90`, `aplicar_ajustes`, `alterar_emissao`, `adicionar_linha`, `propor_liquidacao`…). Cada ferramenta passa pelo validador, que recusa e explica:
    - quantidade fora do múltiplo do lote (com a conversão de caixa);
    - estouro do orçamento;
    - emissão fora da janela;

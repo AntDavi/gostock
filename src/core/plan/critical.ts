@@ -1,6 +1,7 @@
 import { addDays } from "../dates";
 import type { Config, Dataset, Scenario } from "../types";
 import { leadTimeFor, serviceLevelFor, type Plan } from "./allocate";
+import { p90MissedCampaign } from "./risk";
 import { simulateSku } from "./simulate";
 
 export interface CriticalCase {
@@ -25,7 +26,7 @@ export function findCriticalCases(plan: Plan, ds: Dataset, cfg: Config, sc: Scen
     }
 
     for (const l of lines) {
-      const c = cfg.campaigns.find((x) => l.arrival < x.start && addDays(l.emitBy, Math.round(lt.p90)) >= x.start);
+      const c = p90MissedCampaign(l, lt.p90, cfg);
       if (c) {
         out.push({ kind: "leadtime_campaign", sku: s.sku, detail: { lineId: l.id, emitBy: l.emitBy, arrival: l.arrival, arrivalP90: addDays(l.emitBy, Math.round(lt.p90)), campaign: c.name } });
         break;
