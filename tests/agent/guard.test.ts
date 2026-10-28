@@ -24,6 +24,15 @@ describe("numberGuard", () => {
   test("números dentro de textos das ferramentas valem como referência", () => expect(numberGuard("Cobertura de 46 dias", log).ok).toBe(true));
   test("vários números, só os inventados voltam", () =>
     expect(numberGuard("Custo R$ 1,84 mi, fill 96,8% e 37 SKUs cortados", log)).toEqual({ ok: false, unverified: ["37"] }));
+  test("hífens tipográficos em códigos e datas são ignorados", () => {
+    expect(numberGuard("KSH\u20111003 emitido em 2026\u201110\u201102", log).ok).toBe(true);
+    expect(numberGuard("SKU APC\u20131050", log).ok).toBe(true);
+  });
+  test("milhar separado por espaço ou espaço fino", () => {
+    expect(numberGuard("Custo 1 843 250,50", log).ok).toBe(true);
+    expect(numberGuard("Custo 1\u202f843\u202f250,50", log).ok).toBe(true);
+    expect(numberGuard("Custo 1 999 999,00", log).unverified).toEqual(["1 999 999,00"]);
+  });
   test("texto sem números", () => expect(numberGuard("Plano revisado.", [])).toEqual({ ok: true, unverified: [] }));
   test("toolLog com JSON inválido não quebra", () => expect(numberGuard("Custo 1.843.250,50", ["{oops", ...log]).ok).toBe(true));
 });

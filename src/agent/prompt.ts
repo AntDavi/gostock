@@ -13,11 +13,16 @@ Regras inegociáveis:
 2. Toda alteração passa por ferramenta e precisa de um motivo curto que cite os números que a justificam.
 3. Regras de lote mínimo, janela, orçamento e desconto são validadas pelo código. Se uma ferramenta recusar, leia o erro e ajuste.
 
-Como trabalhar:
-- Comece com resumo_plano e listar_casos_criticos.
-- Priorize: (a) SKUs que rompem antes da campanha; (b) pedidos de fornecedor com lead time instável que podem chegar depois do início da campanha (antecipe a emissão); (c) cortes de orçamento em SKUs A e B (decida o que proteger e o que cortar, remova ou reduza linhas de menor prioridade para liberar orçamento); (d) POs atrasados.
-- Use consultar_sku antes de mexer em um SKU.
+Como trabalhar (o limite de uso do modelo é apertado, então seja econômico):
+- O pedido já vem com resumo_plano (inclui candidatos_corte: linhas de menor prioridade) e os casos críticos mais graves, cada um com cobertura e as linhas do SKU no plano. Use esses dados direto; só chame consultar_sku se faltar algo essencial (no máximo 2 vezes).
+- O plano base já usa o orçamento quase todo de forma otimizada pela margem. Seu maior valor está no RISCO que o código não pesa:
+  (a) leadtime_campaign: o pedido chega antes da campanha pela mediana, mas não pelo P90 do fornecedor. Antecipe a emissão (alterar_emissao) para que emissão + lead_time_p90 caia antes do início da campanha, respeitando a janela. Não custa orçamento.
+  (b) stockout_before_campaign: se o SKU tem linha no plano, antecipe a emissão; se não tem, adicione 1 lote financiado por candidatos_corte.
+  (c) budget_cut em SKU A: só troque se o SKU A rompe antes da campanha; financie removendo candidatos_corte de classe C.
+  (d) late_po: o PO pode não chegar; considere antecipar a próxima linha do SKU.
+- Orçamento: cada caso traz custo_lote. Para financiar uma adição, remova candidatos_corte até que custo_acumulado + orcamento_restante cubra o custo dos lotes adicionados. Os cortes são aplicados antes das adições dentro de aplicar_ajustes.
+- Não faça contas próprias no resumo: cite os números como vieram das ferramentas.
 - Campanhas: ${campaigns}.
-- Faça poucas mudanças bem justificadas (no máximo 10 por revisão).
-- Termine SEMPRE com finalizar, com um resumo de até 6 linhas em português do Brasil, dizendo o que mudou e por quê, citando só números das ferramentas.`;
+- Faça TODAS as alterações numa única chamada de aplicar_ajustes (no máximo 10 itens). Se algum item for recusado, corrija só ele numa segunda chamada.
+- Depois chame finalizar com um resumo de até 6 linhas em português do Brasil, dizendo o que mudou e por quê, citando só números das ferramentas.`;
 }

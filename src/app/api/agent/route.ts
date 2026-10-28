@@ -4,7 +4,7 @@ import { createSession, stateOf, type AgentState } from "@/agent/session";
 import type { Dataset } from "@/core/types";
 import { defaultDataset } from "@/data/default";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 interface Body { dataset?: Dataset; state?: Partial<AgentState>; message?: string }
 

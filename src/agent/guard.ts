@@ -1,18 +1,24 @@
 // Confere se cada número do texto do agente veio de alguma saída de ferramenta.
 
 const TOKEN =
-  /(R\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+,\d+|\d+\.\d+|\d+)(\s*(?:milhões|milhão|mi\b|mil\b|%))?/gi;
+  /(R\$\s*)?(\d{1,3}(?:[. ]\d{3})+(?:,\d+)?|\d+,\d+|\d+\.\d+|\d+)(\s*(?:milhões|milhão|mi\b|mil\b|%))?/gi;
 const DATE = /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b/g;
 const REL_TOLERANCE = 0.005;
 
 interface Found { text: string; value: number; ignorable: boolean }
 
+/** Hífens tipográficos viram "-" e espaços especiais viram espaço comum. */
+function normalize(text: string): string {
+  return text.replace(/[\u2010-\u2015\u2212]/g, "-").replace(/[\u00a0\u202f\u2009\u2007]/g, " ");
+}
+
 function parseBR(raw: string): number {
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, "").replace(",", "."));
+  if (/^\d{1,3}([. ]\d{3})+(,\d+)?$/.test(raw)) return Number(raw.replace(/[. ]/g, "").replace(",", "."));
   return Number(raw.replace(",", "."));
 }
 
-function extract(text: string): Found[] {
+function extract(raw: string): Found[] {
+  const text = normalize(raw);
   const masked = text.replace(DATE, (m) => " ".repeat(m.length));
   const out: Found[] = [];
   for (const m of masked.matchAll(TOKEN)) {

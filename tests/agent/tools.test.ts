@@ -157,14 +157,92 @@ describe("callTool", () => {
     expect(res).not.toHaveProperty("weekly");
   });
 
-  test("listar_casos_criticos limita a 40 e ordena por gravidade", () => {
+  test("listar_casos_criticos: 12 por padrão, no máximo 20, ordenado por gravidade", () => {
     const s = createSession(ds, { config: { ...defaultConfig, budget: 1 } });
     const r = callTool(s, "listar_casos_criticos", {});
     const res = r.result as { casos: { kind: string }[]; total: number };
-    expect(res.casos.length).toBeLessThanOrEqual(40);
+    expect(res.casos.length).toBeLessThanOrEqual(12);
+    expect(callTool(s, "listar_casos_criticos", { limite: 50 }).ok).toBe(true);
     expect(res.total).toBeGreaterThanOrEqual(res.casos.length);
     expect(res.casos[0].kind).toBe("stockout_before_campaign");
   });
+
+  test("resumo_plano lista as linhas de menor prioridade como candidatas a corte", () => {
+    const res = callTool(fresh(), "resumo_plano", {}).result as { candidatos_corte: { id: string; prioridade: number }[] };
+    expect(res.candidatos_corte.length).toBeGreaterThan(0);
+    expect(res.candidatos_corte.length).toBeLessThanOrEqual(8);
+    const p = res.candidatos_corte.map((c) => c.prioridade);
+    expect([...p].sort((x, y) => x - y)).toEqual(p);
+  });
+
+  test("casos críticos trazem cobertura e as linhas do SKU no plano", () => {
+    const s = createSession(ds, { config: { ...defaultConfig, budget: 1e9 } });
+    const res = callTool(s, "listar_casos_criticos", {}).result as { casos: Record<string, unknown>[] };
+    const c = res.casos.find((x) => x.sku === "AAA-1")!;
+    expect(c).toHaveProperty("cobertura_dias");
+    expect(Array.isArray(c.linhas)).toBe(true);
+    expect((c.linhas as { id: string }[])[0]).toHaveProperty("id");
+  });
+
+  test("listar_casos_criticos por_tipo traz até N de cada tipo, com lead time", () => {
+    const s = createSession(ds, { config: { ...defaultConfig, budget: 1 } });
+    const res = callTool(s, "listar_casos_criticos", { por_tipo: 1 }).result as { casos: Record<string, unknown>[] };
+    const kinds = res.casos.map((c) => c.kind);
+    expect(new Set(kinds).size).toBe(kinds.length);
+    expect(kinds.length).toBeGreaterThan(1);
+    expect(res.casos[0]).toHaveProperty("lead_time_p90");
+    expect(res.casos[0]).toHaveProperty("lead_time_mediana");
+  });
+
+  test("aplicar_ajustes executa vários ajustes e reporta cada um", () => {
+    const s = fresh();
+    const [a, b] = s.plan.lines;
+    const r = callTool(s, "aplicar_ajustes", {
+      ajustes: [
+        { acao: "alterar_quantidade", linha_id: a.id, lotes: 1, motivo: "reduzir" },
+        { acao: "remover_linha", linha_id: "nao-existe", motivo: "x" },
+        { acao: "alterar_emissao", linha_id: b.id, data: "2026-10-02", motivo: "antecipar" },
+        { acao: "finalizar", resumo: "x" },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    const res = r.result as { resultados: { ok: boolean; erro?: string }[] };
+    expect(res.resultados.map((x) => x.ok)).toEqual([true, false, true, false]);
+    expect(res.resultados[3].erro).toContain("não permitida");
+    expect(s.changes.map((c) => c.kind)).toEqual(["quantity", "emission"]);
+  });
+
+  test("aplicar_ajustes aplica cortes antes de adições", () => {
+    const tight = runPipeline(rawMini(), defaultConfig);
+    const probe = createSession(tight, { config: { ...defaultConfig, budget: 1e9 } });
+    const s = createSession(tight, { config: { ...defaultConfig, budget: probe.plan.totalCost } });
+    const victim = s.plan.lines.find((l) => l.sku === "AAA-1")!;
+    const r = callTool(s, "aplicar_ajustes", {
+      ajustes: [
+        { acao: "adicionar_linha", sku: "BBB-1", lotes: 1, data: "2026-10-02", motivo: "reforço" },
+        { acao: "remover_linha", linha_id: victim.id, motivo: "liberar orçamento" },
+      ],
+    });
+    const res = r.result as { resultados: { i: number; ok: boolean }[] };
+    expect(res.resultados.map((x) => x.ok)).toEqual([true, true]);
+    expect(res.resultados.map((x) => x.i)).toEqual([0, 1]);
+    expect(s.changes.map((c) => c.kind)).toEqual(["remove", "add"]);
+  });
+
+  test("candidatos a corte trazem custo acumulado e casos trazem custo do lote", () => {
+    const s = fresh();
+    const res = callTool(s, "resumo_plano", {}).result as { candidatos_corte: { custo: number; custo_acumulado: number }[] };
+    let acc = 0;
+    for (const c of res.candidatos_corte) {
+      acc += c.custo;
+      expect(c.custo_acumulado).toBeCloseTo(acc, 2);
+    }
+    const casos = (callTool(s, "listar_casos_criticos", {}).result as { casos: Record<string, unknown>[] }).casos;
+    expect(casos[0]).toHaveProperty("custo_lote");
+    expect(casos[0]).toHaveProperty("unidades_lote");
+  });
+
+  test("aplicar_ajustes sem lista → erro", () => expect(callTool(fresh(), "aplicar_ajustes", { ajustes: "x" }).ok).toBe(false));
 
   test("finalizar não entra no toolLog (o resumo não pode verificar a si mesmo)", () => {
     const s = fresh();

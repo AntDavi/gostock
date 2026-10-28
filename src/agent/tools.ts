@@ -19,8 +19,8 @@ export const toolDefs: ToolDef[] = [
   { name: "resumo_plano", description: "Totais do plano atual: custo, orçamento, orçamento restante, fill esperado, linhas por origem e não financiadas.", parameters: schema({}, []) },
   {
     name: "listar_casos_criticos",
-    description: "Casos que pedem julgamento, do mais grave ao menos grave (máx. 40): ruptura antes da BF, lead time arriscado para campanha, corte de orçamento em SKU A/B, PO atrasado, histórico curto.",
-    parameters: schema({ tipo: { type: "string", enum: ["stockout_before_campaign", "leadtime_campaign", "budget_cut", "late_po", "short_history"] }, limite: { type: "integer", minimum: 1, maximum: 40 } }, []),
+    description: "Casos que pedem julgamento, do mais grave ao menos grave (padrão 12, máx. 20). Filtre por tipo para ver mais de um tipo.",
+    parameters: schema({ tipo: { type: "string", enum: ["stockout_before_campaign", "leadtime_campaign", "budget_cut", "late_po", "short_history"] }, limite: { type: "integer", minimum: 1, maximum: 20 }, por_tipo: { type: "integer", minimum: 1, maximum: 5, description: "Até N casos de cada tipo." } }, []),
   },
   { name: "consultar_sku", description: "Situação de um SKU: estoque, cobertura, demanda, lead time, POs em aberto, linhas no plano, projeção nas campanhas e opções de liquidação.", parameters: schema({ sku: str }, ["sku"]) },
   { name: "alterar_quantidade", description: "Muda a quantidade de uma linha do plano, em lotes (múltiplos do lote mínimo).", parameters: schema({ linha_id: str, lotes: { type: "integer", minimum: 1 }, motivo }, ["linha_id", "lotes", "motivo"]) },
@@ -45,6 +45,11 @@ export const toolDefs: ToolDef[] = [
     ),
   },
   { name: "propor_liquidacao", description: "Propõe liquidar um SKU com excesso usando um dos descontos calculados (0,1 a 0,4).", parameters: schema({ sku: str, desconto: { type: "number" }, motivo }, ["sku", "desconto", "motivo"]) },
+  {
+    name: "aplicar_ajustes",
+    description: "Aplica VÁRIOS ajustes de uma vez (prefira esta ferramenta). Cada item tem \"acao\" (alterar_quantidade, alterar_emissao, remover_linha, adicionar_linha, definir_nivel_servico, propor_liquidacao) e os mesmos campos da ferramenta correspondente. Itens inválidos são recusados sem afetar os outros.",
+    parameters: schema({ ajustes: { type: "array", minItems: 1, maxItems: 15, items: { type: "object", properties: { acao: str }, required: ["acao"] } } }, ["ajustes"]),
+  },
   { name: "finalizar", description: "Encerra a revisão com um resumo curto (até 6 linhas) para o chefe de estoque.", parameters: schema({ resumo: str }, ["resumo"]) },
 ];
 
@@ -109,6 +114,15 @@ function summary(s: AgentSession) {
     linhas_nao_financiadas: p.unfunded.length,
     custo_nao_financiado: r2(p.unfunded.reduce((a, l) => a + l.cost, 0)),
     mudancas: s.changes.length,
+    candidatos_corte: [...p.lines]
+      .filter((l) => l.origin === "base")
+      .sort((x, y) => x.priority - y.priority)
+      .slice(0, 8)
+      .map((l, _i, arr) => {
+        const k = s.ds.skus.find((x) => x.sku === l.sku);
+        const acc = arr.slice(0, arr.indexOf(l) + 1).reduce((t, x) => t + x.cost, 0);
+        return { id: l.id, sku: l.sku, abc: k?.abc, cobertura_dias: k?.metrics.coverageDays, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost), custo_acumulado: r2(acc), prioridade: r4(l.priority) };
+      }),
   };
 }
 
@@ -136,7 +150,8 @@ const handlers: Record<string, Handler> = {
 
   listar_casos_criticos: (s, a) => {
     const tipo = a.tipo === undefined ? undefined : reqStr(a, "tipo");
-    const limite = Math.min(40, a.limite === undefined ? 40 : reqPosInt(a, "limite"));
+    const limite = Math.min(20, a.limite === undefined ? 12 : reqPosInt(a, "limite"));
+    const porTipoN = a.por_tipo === undefined ? undefined : Math.min(5, reqPosInt(a, "por_tipo"));
     const abc = new Map(s.ds.skus.map((k) => [k.sku, k.abc]));
     const all = findCriticalCases(s.plan, s.ds, s.config, s.scenario);
     const filtered = all
@@ -149,7 +164,21 @@ const handlers: Record<string, Handler> = {
       );
     const porTipo: Record<string, number> = {};
     for (const c of all) porTipo[c.kind] = (porTipo[c.kind] ?? 0) + 1;
-    return { total: filtered.length, por_tipo: porTipo, casos: filtered.slice(0, limite).map((c) => ({ ...c, abc: abc.get(c.sku) })) };
+    const bySku = new Map(s.ds.skus.map((k) => [k.sku, k]));
+    const picked = porTipoN === undefined ? filtered.slice(0, limite) : KIND_ORDER.flatMap((k) => filtered.filter((c) => c.kind === k).slice(0, porTipoN));
+    const casos = picked.map((c) => ({
+      kind: c.kind,
+      sku: c.sku,
+      abc: abc.get(c.sku),
+      cobertura_dias: bySku.get(c.sku)?.metrics.coverageDays,
+      unidades_lote: bySku.get(c.sku)?.lotUnits,
+      custo_lote: r2(bySku.get(c.sku)?.lotCost ?? 0),
+      lead_time_mediana: leadTimeFor(s.ds, bySku.get(c.sku)?.supplier ?? "").median,
+      lead_time_p90: leadTimeFor(s.ds, bySku.get(c.sku)?.supplier ?? "").p90,
+      ...c.detail,
+      linhas: s.plan.lines.filter((l) => l.sku === c.sku).map((l) => ({ id: l.id, lotes: l.lots, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost) })),
+    }));
+    return { total: filtered.length, por_tipo: porTipo, casos };
   },
 
   consultar_sku: (s, a) => {
@@ -308,23 +337,46 @@ const handlers: Record<string, Handler> = {
   },
 
   finalizar: (_s, a) => ({ resumo: reqStr(a, "resumo") }),
+
+  aplicar_ajustes: (s, a) => {
+    if (!Array.isArray(a.ajustes) || !a.ajustes.length) throw new ToolError('Campo "ajustes" deve ser uma lista não vazia.');
+    const items = a.ajustes.slice(0, 15).map((item, i) => ({
+      i,
+      item,
+      acao: typeof item === "object" && item !== null ? (item as Record<string, unknown>).acao : undefined,
+    }));
+    // Cortes e reduções primeiro, para liberar orçamento antes das adições.
+    const rank = (acao: unknown) => (acao === "remover_linha" ? 0 : acao === "alterar_quantidade" ? 1 : 2);
+    const resultados = [...items]
+      .sort((x, y) => rank(x.acao) - rank(y.acao) || x.i - y.i)
+      .map(({ i, item, acao }) => {
+        if (typeof acao !== "string" || !BATCHABLE.has(acao)) return { i, acao, ok: false, erro: `Ação não permitida em lote: ${String(acao)}.` };
+        const r = runHandler(s, acao, item);
+        return r.ok ? { i, acao, ok: true } : { i, acao, ok: false, erro: r.error };
+      })
+      .sort((x, y) => x.i - y.i);
+    return { resultados, ...summary(s) };
+  },
 };
+
+const BATCHABLE = new Set(["alterar_quantidade", "alterar_emissao", "remover_linha", "adicionar_linha", "definir_nivel_servico", "propor_liquidacao"]);
+
+/** Executa um handler restaurando o estado da sessão se ele falhar. */
+function runHandler(session: AgentSession, name: string, args: unknown): ToolResult {
+  const handler = handlers[name];
+  if (!handler) return { ok: false, result: null, error: `Ferramenta desconhecida: ${name}.` };
+  const snapshot = { plan: session.plan, basePlan: session.basePlan, scenario: session.scenario, changes: [...session.changes], markdowns: session.markdowns };
+  try {
+    return { ok: true, result: handler(session, obj(args)) };
+  } catch (e) {
+    Object.assign(session, snapshot);
+    return { ok: false, result: null, error: e instanceof ToolError ? e.message : `Erro interno: ${(e as Error).message}` };
+  }
+}
 
 /** Executa uma ferramenta. Nunca lança: erros voltam como { ok: false, error } e a sessão fica intacta. */
 export function callTool(session: AgentSession, name: string, args: unknown): ToolResult {
-  const handler = handlers[name];
-  let out: ToolResult;
-  if (!handler) {
-    out = { ok: false, result: null, error: `Ferramenta desconhecida: ${name}.` };
-  } else {
-    const snapshot = { plan: session.plan, basePlan: session.basePlan, scenario: session.scenario, changes: [...session.changes], markdowns: session.markdowns };
-    try {
-      out = { ok: true, result: handler(session, obj(args)) };
-    } catch (e) {
-      Object.assign(session, snapshot);
-      out = { ok: false, result: null, error: e instanceof ToolError ? e.message : `Erro interno: ${(e as Error).message}` };
-    }
-  }
+  const out = runHandler(session, name, args);
   // O resumo final não é fonte de números: senão o texto verificaria a si mesmo.
   if (name !== "finalizar") session.toolLog.push(JSON.stringify(out.ok ? out.result : { erro: out.error }));
   return out;
