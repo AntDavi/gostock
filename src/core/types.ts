@@ -57,3 +57,28 @@ export interface Config {
 export interface DayPoint { date: ISODate; units: number; revenue: number; onHand: number; censored: boolean }
 export interface LeadTimeStats { n: number; median: number; mean: number; p90: number; std: number; min: number; max: number }
 export interface OpenOrder { poId: string; units: number; orderDate: ISODate; expectedDate: ISODate; late: boolean }
+
+export interface DemandModel {
+  baseDaily: number;
+  sigmaDaily: number;
+  trendMonthly: number;
+  campaignLift: Record<string, number>;
+  historyDays: number;
+  source: "sku" | "category";
+}
+
+export interface Scenario {
+  campaignMultiplier: Record<string, number>;
+  budget?: number;
+  serviceMode: "tiered" | "uniform";
+  uniformLevel?: number;
+  protectedBrands: string[];
+  reinvestMarkdown: boolean;
+}
+
+export const defaultScenario: Scenario = {
+  campaignMultiplier: {},
+  serviceMode: "tiered",
+  protectedBrands: [],
+  reinvestMarkdown: false,
+};
