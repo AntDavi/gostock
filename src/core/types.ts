@@ -53,3 +53,7 @@ export interface Config {
   markdownPriceShare: number;
   campaigns: Campaign[];
 }
+
+export interface DayPoint { date: ISODate; units: number; revenue: number; onHand: number; censored: boolean }
+export interface LeadTimeStats { n: number; median: number; mean: number; p90: number; std: number; min: number; max: number }
+export interface OpenOrder { poId: string; units: number; orderDate: ISODate; expectedDate: ISODate; late: boolean }
