@@ -56,3 +56,13 @@ export function approvalsKey(datasetId: string, config: unknown): string {
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
   return `${datasetId}:${(h >>> 0).toString(36)}`;
 }
+
+/** Aprovações e estado do agente salvos para este dataset + configuração (null fora do navegador). */
+export function readStoredApprovals(datasetId: string, config: unknown): StoredApprovals | null {
+  try {
+    if (typeof window === "undefined") return null;
+    return loadApprovals(window.localStorage, approvalsKey(datasetId, config));
+  } catch {
+    return null;
+  }
+}

@@ -15,6 +15,7 @@ import { validatePlan } from "@/core/plan/validate";
 import { approvalsKey, applyEdits, loadApprovals, saveApprovals, type Decision, type LineEdit, type StoredApprovals } from "../approvals";
 import { useDataset } from "../DatasetProvider";
 import { brl, dateBR, pct } from "../format";
+import { downloadCsv } from "../common/download";
 import { useCompute } from "../useCompute";
 import { AgentPanel } from "./AgentPanel";
 import { PlanTable } from "./PlanTable";
@@ -25,15 +26,6 @@ function storage(): Storage | null {
   } catch {
     return null;
   }
-}
-
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 export function PlanPage() {
@@ -129,7 +121,7 @@ export function PlanPage() {
         <div className="flex flex-col items-start gap-1 sm:items-end">
           <Button
             disabled={approved.length === 0 || exportErrors.length > 0}
-            onClick={() => download(`pedidos-gostock-${cfg.referenceDate}.csv`, planToCsv(approved, ds))}
+            onClick={() => downloadCsv(`pedidos-gostock-${cfg.referenceDate}.csv`, planToCsv(approved, ds))}
           >
             <DownloadIcon data-icon="inline-start" /> Exportar {approved.length} aprovada{approved.length === 1 ? "" : "s"} (CSV)
           </Button>

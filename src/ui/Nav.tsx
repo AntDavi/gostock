@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MenuIcon } from "lucide-react";
@@ -19,7 +20,8 @@ const LINKS = [
   { href: "/dados", label: "Dados" },
 ];
 
-function isActive(pathname: string, href: string) {
+function isActive(pathname: string | null, href: string) {
+  if (pathname === null) return false;
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -34,8 +36,20 @@ function DataBadge() {
   );
 }
 
+/** O destaque do link ativo lê a URL; em rotas dinâmicas isso precisa de Suspense. */
 export function Nav() {
-  const pathname = usePathname();
+  return (
+    <Suspense fallback={<NavBar pathname={null} />}>
+      <NavWithPath />
+    </Suspense>
+  );
+}
+
+function NavWithPath() {
+  return <NavBar pathname={usePathname()} />;
+}
+
+function NavBar({ pathname }: { pathname: string | null }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">

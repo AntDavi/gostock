@@ -11,20 +11,25 @@ export interface Overview {
   stockouts: Record<string, ISODate | null>;
 }
 
-const OVERSTOCK_DAYS = 365;
+export const OVERSTOCK_DAYS = 365;
 
 /** Cálculo pesado (alguns segundos): roda no Web Worker. */
 export function computeOverview(ds: Dataset, cfg: Config, sc: Scenario = defaultScenario): Overview {
+  const [p98] = serviceCurve(ds, cfg, sc, [0.98]);
+  return { budgetCurve: budgetCurve(ds, cfg, sc), uniform98Cost: p98.cost, stockouts: computeStockouts(ds, cfg, sc) };
+}
+
+/** Data de ruptura de cada SKU ativo sem pedido novo (POs em aberto contam). */
+export function computeStockouts(ds: Dataset, cfg: Config, sc: Scenario = defaultScenario): Record<string, ISODate | null> {
   const stockouts: Record<string, ISODate | null> = {};
   for (const s of ds.skus) {
     if (s.status !== "ativo") continue;
     stockouts[s.sku] = simulateSku(s, leadTimeFor(ds, s.supplier), serviceLevelFor(s, cfg, sc), cfg, sc, []).stockoutDate;
   }
-  const [p98] = serviceCurve(ds, cfg, sc, [0.98]);
-  return { budgetCurve: budgetCurve(ds, cfg, sc), uniform98Cost: p98.cost, stockouts };
+  return stockouts;
 }
 
-function firstCampaign(cfg: Config): Campaign {
+export function firstCampaign(cfg: Config): Campaign {
   return [...cfg.campaigns].sort((a, b) => a.start.localeCompare(b.start))[0];
 }
 
