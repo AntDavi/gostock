@@ -1,0 +1,9 @@
+case_estoque/
+Desafio_AI-First_Gogroup.pdf
+*.pdf
+.superpowers/
+node_modules/
+.next/
+.env*
+!.env.example
+.vercel/
