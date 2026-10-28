@@ -45,11 +45,12 @@ function priority(line: LineDraft, s: SkuSummary, cfg: Config, sc: Scenario): nu
   return (Math.max(0, s.unitMargin) * Math.min(line.units, sold)) / line.cost;
 }
 
-export function buildBasePlan(ds: Dataset, cfg: Config, sc: Scenario): Plan {
-  const budget = sc.budget ?? cfg.budget;
-  const levels: Record<string, number> = {};
-  const queues: { drafts: LineDraft[]; prio: number[]; reason: string }[] = [];
+export interface DraftQueue { sku: string; drafts: LineDraft[]; prio: number[]; reason: string }
 
+/** Linhas candidatas de cada SKU ativo (sem orçamento), com prioridade e motivo. */
+export function prepareQueues(ds: Dataset, cfg: Config, sc: Scenario): { queues: DraftQueue[]; levels: Record<string, number> } {
+  const levels: Record<string, number> = {};
+  const queues: DraftQueue[] = [];
   for (const s of ds.skus) {
     if (s.status !== "ativo") continue;
     const level = serviceLevelFor(s, cfg, sc);
@@ -62,10 +63,13 @@ export function buildBasePlan(ds: Dataset, cfg: Config, sc: Scenario): Plan {
       `Cobertura atual ${s.metrics.coverageDays} dias; ` +
       `ruptura prevista sem compra em ${stockout ? dateBR(stockout) : "—"}; ` +
       `lead time ${Math.round(lt.median)} dias (${s.supplier}).`;
-    queues.push({ drafts, prio: drafts.map((d) => priority(d, s, cfg, sc)), reason });
+    queues.push({ sku: s.sku, drafts, prio: drafts.map((d) => priority(d, s, cfg, sc)), reason });
   }
+  return { queues, levels };
+}
 
-  // Alocação gulosa por prioridade, respeitando a ordem cronológica das linhas de cada SKU.
+/** Alocação gulosa por prioridade, respeitando a ordem cronológica das linhas de cada SKU. */
+export function allocateQueues(queues: DraftQueue[], budget: number): { lines: PlanLine[]; unfunded: LineDraft[] } {
   const lines: PlanLine[] = [];
   const unfunded: LineDraft[] = [];
   const next = queues.map(() => 0);
@@ -88,31 +92,45 @@ export function buildBasePlan(ds: Dataset, cfg: Config, sc: Scenario): Plan {
     }
   }
   lines.sort((a, b) => (a.emitBy === b.emitBy ? a.sku.localeCompare(b.sku) || a.seq - b.seq : a.emitBy < b.emitBy ? -1 : 1));
+  return { lines, unfunded };
+}
 
+export function buildBasePlan(ds: Dataset, cfg: Config, sc: Scenario): Plan {
+  const budget = sc.budget ?? cfg.budget;
+  const { queues, levels } = prepareQueues(ds, cfg, sc);
+  const { lines, unfunded } = allocateQueues(queues, budget);
   const fill = planFillRate(ds, lines, cfg, sc);
   return { lines, totalCost: lines.reduce((s, l) => s + l.cost, 0), budget, ...fill, levels, unfunded };
 }
 
-/**
- * Fill rate esperado do plano: re-simula cada SKU ativo só com as linhas dadas (perda determinística)
- * e soma a perda estatística σL·G(z) de cada linha.
- */
+/** Demanda e perda esperada de um SKU ativo até o fim da janela, só com as linhas dadas. */
+export function skuLoss(ds: Dataset, s: SkuSummary, lines: LineDraft[], cfg: Config, sc: Scenario): { demand: number; lost: number } {
+  const lt = leadTimeFor(ds, s.supplier);
+  const level = serviceLevelFor(s, cfg, sc);
+  const r = simulateSku(s, lt, level, cfg, sc, lines);
+  const sigmaL = sigmaLeadTime(s.demand.baseDaily, s.demand.sigmaDaily, lt);
+  let lost = r.lostUnits;
+  // Perda estatística de cada ciclo; linha que chega após a janela não afeta o período medido.
+  for (const l of lines) if (l.arrival <= cfg.windowEnd) lost += sigmaL * normalLoss(zForFillRate(level, l.units, sigmaL));
+  return { demand: r.demand, lost };
+}
+
+export function fillFromLosses(demandUnits: number, lost: number) {
+  const lostUnits = Math.min(lost, demandUnits);
+  return { demandUnits, lostUnits, expectedFillRate: demandUnits > 0 ? 1 - lostUnits / demandUnits : 1 };
+}
+
+/** Fill rate esperado do plano, re-simulando cada SKU ativo só com as linhas dadas. */
 export function planFillRate(ds: Dataset, lines: LineDraft[], cfg: Config, sc: Scenario) {
   const bySku = new Map<string, LineDraft[]>();
   for (const l of lines) bySku.set(l.sku, [...(bySku.get(l.sku) ?? []), l]);
-  let demandUnits = 0;
-  let lostUnits = 0;
+  let demand = 0;
+  let lost = 0;
   for (const s of ds.skus) {
     if (s.status !== "ativo") continue;
-    const lt = leadTimeFor(ds, s.supplier);
-    const level = serviceLevelFor(s, cfg, sc);
-    const mine = bySku.get(s.sku) ?? [];
-    const r = simulateSku(s, lt, level, cfg, sc, mine);
-    demandUnits += r.demand;
-    lostUnits += r.lostUnits;
-    const sigmaL = sigmaLeadTime(s.demand.baseDaily, s.demand.sigmaDaily, lt);
-    for (const l of mine) lostUnits += sigmaL * normalLoss(zForFillRate(level, l.units, sigmaL));
+    const r = skuLoss(ds, s, bySku.get(s.sku) ?? [], cfg, sc);
+    demand += r.demand;
+    lost += r.lost;
   }
-  lostUnits = Math.min(lostUnits, demandUnits);
-  return { demandUnits, lostUnits, expectedFillRate: demandUnits > 0 ? 1 - lostUnits / demandUnits : 1 };
+  return fillFromLosses(demand, lost);
 }

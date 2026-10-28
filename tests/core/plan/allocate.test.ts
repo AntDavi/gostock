@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { defaultConfig } from "@/core/config";
 import { addDays } from "@/core/dates";
 import { runPipeline } from "@/core/pipeline";
-import { buildBasePlan, planFillRate, serviceLevelFor } from "@/core/plan/allocate";
+import { buildBasePlan, planFillRate, serviceLevelFor, skuLoss } from "@/core/plan/allocate";
 import { planToCsv } from "@/core/plan/export";
 import { validatePlan } from "@/core/plan/validate";
 import { defaultScenario } from "@/core/types";
@@ -60,6 +60,15 @@ describe("buildBasePlan", () => {
     expect(full.expectedFillRate).toBeCloseTo(1 - full.lostUnits / full.demandUnits, 6);
     const none = planFillRate(ds, [], cfg, defaultScenario);
     expect(none.expectedFillRate).toBeLessThan(full.expectedFillRate);
+  });
+});
+
+describe("skuLoss", () => {
+  test("linha que chega depois do fim da janela não muda a perda dentro dela", () => {
+    const aaa = ds.skus.find((s) => s.sku === "AAA-1")!;
+    const lines = full.lines.filter((l) => l.sku === "AAA-1" && l.arrival <= cfg.windowEnd);
+    const late = { ...lines[lines.length - 1], seq: 99, emitBy: "2026-12-29", arrival: addDays(cfg.windowEnd, 5) };
+    expect(skuLoss(ds, aaa, [...lines, late], cfg, defaultScenario).lost).toBeCloseTo(skuLoss(ds, aaa, lines, cfg, defaultScenario).lost, 9);
   });
 });
 
