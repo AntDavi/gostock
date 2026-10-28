@@ -6,6 +6,11 @@ import { validateDiscount, validateLine, validatePlan, type ValidationError } fr
 import type { Scenario } from "@/core/types";
 import { basePlanFor, replaceSkuLines, type AgentSession, type Change } from "./session";
 
+/** Chegadas pela mediana e pelo P90 do fornecedor, calculadas aqui para o agente não somar datas. */
+function arrivals(date: string, lt: { median: number; p90: number }) {
+  return { chegada_mediana: addDays(date, Math.max(1, Math.round(lt.median))), chegada_p90: addDays(date, Math.max(1, Math.round(lt.p90))) };
+}
+
 export interface ToolDef { name: string; description: string; parameters: object }
 export interface ToolResult { ok: boolean; result: unknown; error?: string }
 
@@ -176,7 +181,10 @@ const handlers: Record<string, Handler> = {
       lead_time_mediana: leadTimeFor(s.ds, bySku.get(c.sku)?.supplier ?? "").median,
       lead_time_p90: leadTimeFor(s.ds, bySku.get(c.sku)?.supplier ?? "").p90,
       ...c.detail,
-      linhas: s.plan.lines.filter((l) => l.sku === c.sku).map((l) => ({ id: l.id, lotes: l.lots, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost) })),
+      se_emitir_no_inicio: { emissao: s.config.windowStart, ...arrivals(s.config.windowStart, leadTimeFor(s.ds, bySku.get(c.sku)?.supplier ?? "")) },
+      linhas: s.plan.lines
+        .filter((l) => l.sku === c.sku)
+        .map((l) => ({ id: l.id, lotes: l.lots, emissao: l.emitBy, chegada: l.arrival, chegada_p90: arrivals(l.emitBy, leadTimeFor(s.ds, l.supplier)).chegada_p90, custo: r2(l.cost) })),
     }));
     return { total: filtered.length, por_tipo: porTipo, casos };
   },
@@ -192,7 +200,8 @@ const handlers: Record<string, Handler> = {
     return {
       ...rest,
       lead_time: { mediana: lt.median, p90: lt.p90, max: lt.max },
-      linhas_plano: lines.map((l) => ({ id: l.id, lotes: l.lots, unidades: l.units, emissao: l.emitBy, chegada: l.arrival, custo: r2(l.cost), origem: l.origin })),
+      se_emitir_no_inicio: { emissao: s.config.windowStart, ...arrivals(s.config.windowStart, lt) },
+      linhas_plano: lines.map((l) => ({ id: l.id, lotes: l.lots, unidades: l.units, emissao: l.emitBy, chegada: l.arrival, chegada_p90: arrivals(l.emitBy, lt).chegada_p90, custo: r2(l.cost), origem: l.origin })),
       linhas_nao_financiadas: s.plan.unfunded.filter((l) => l.sku === k.sku).map((l) => ({ lotes: l.lots, emissao: l.emitBy, custo: r2(l.cost) })),
       projecao: {
         ...Object.fromEntries(s.config.campaigns.map((c) => [`estoque_em_${c.start}`, at(addDays(c.start, -1)) === undefined ? null : Math.round(at(addDays(c.start, -1))!)])),

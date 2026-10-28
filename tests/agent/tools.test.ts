@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { createSession } from "@/agent/session";
 import { callTool, toolDefs } from "@/agent/tools";
 import { defaultConfig } from "@/core/config";
+import { leadTimeFor } from "@/core/plan/allocate";
 import { runPipeline } from "@/core/pipeline";
 import { rawMini } from "../fixtures/mini";
 
@@ -192,6 +193,24 @@ describe("callTool", () => {
     expect(kinds.length).toBeGreaterThan(1);
     expect(res.casos[0]).toHaveProperty("lead_time_p90");
     expect(res.casos[0]).toHaveProperty("lead_time_mediana");
+  });
+
+  test("datas de chegada vêm prontas: P90 por linha e chegada se emitir no início da janela", () => {
+    const s = createSession(ds, { config: { ...defaultConfig, budget: 1e9 } });
+    const lt = leadTimeFor(ds, ds.skus.find((k) => k.sku === "AAA-1")!.supplier);
+    const plus = (d: string, n: number) => { const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+    const esperado = {
+      emissao: defaultConfig.windowStart,
+      chegada_mediana: plus(defaultConfig.windowStart, Math.max(1, Math.round(lt.median))),
+      chegada_p90: plus(defaultConfig.windowStart, Math.max(1, Math.round(lt.p90))),
+    };
+    const caso = (callTool(s, "listar_casos_criticos", {}).result as { casos: Record<string, unknown>[] }).casos.find((x) => x.sku === "AAA-1")!;
+    expect(caso.se_emitir_no_inicio).toEqual(esperado);
+    const linha = (caso.linhas as { emissao: string; chegada_p90: string }[])[0];
+    expect(linha.chegada_p90).toBe(plus(linha.emissao, Math.max(1, Math.round(lt.p90))));
+    const sku = callTool(s, "consultar_sku", { sku: "AAA-1" }).result as Record<string, unknown>;
+    expect(sku.se_emitir_no_inicio).toEqual(esperado);
+    expect((sku.linhas_plano as Record<string, unknown>[])[0]).toHaveProperty("chegada_p90");
   });
 
   test("aplicar_ajustes executa vários ajustes e reporta cada um", () => {

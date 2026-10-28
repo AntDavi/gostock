@@ -113,7 +113,7 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
   - **Nível de detalhe permitido no repositório (decidido pelo usuário, 27/10):** histórico **semanal** de vendas e estoque por SKU, projeções e indicadores derivados. **Sem** custo unitário nem preço de venda crus por SKU (só valores agregados já calculados, como capital parado, valor do pedido e venda perdida). Sem histórico diário.
   - O **histórico diário completo** e os dados crus só aparecem quando o usuário faz **upload** dos CSVs, e ficam apenas no navegador dele.
   - Consequência para o builder: as ferramentas do agente e o motor de plano precisam funcionar sobre o resumo agregado. Para valorar pedidos, o resumo precisa de algum custo por SKU (ex.: custo por lote de MOQ). **Limitação aceita:** quem dividir o valor de um pedido pela quantidade chega ao custo unitário. O objetivo é não republicar as tabelas cruas do desafio, não esconder cada número derivado.
-- **LLM:** Groq (chave gratuita), via variável de ambiente no servidor.
+- **LLM:** Claude Haiku 5.5 (API da Anthropic), via variável de ambiente no servidor.
 - **Vercel:** corpo de requisição ≤ ~4,5 MB; `vendas_diarias.csv` e `estoque_diario.csv` têm ~4,6 MB cada → upload não pode ir ao servidor bruto.
 
 ---
@@ -127,7 +127,7 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 1. **Pipeline de dados (TypeScript, módulo compartilhado):** lê os CSVs → limpa (dedup, negativos, lacunas, conversão de caixa) → calcula demanda corrigida pela ruptura, tendência, efeito BF/Natal, lead times por fornecedor, estoque a caminho, capital parado, venda perdida, nível de serviço histórico → gera um **resumo por SKU** (JSON).
    - **Dados padrão:** o pipeline roda **na máquina do desenvolvedor** sobre `case_estoque/` e o JSON agregado é commitado.
    - **Upload:** o usuário envia os mesmos CSVs pela interface; o pipeline roda **no navegador** (Web Worker), os dados brutos nunca saem da máquina dele, e o resumo substitui o dataset padrão na sessão. Validar colunas e avisar o que estiver errado.
-2. **Servidor (rotas Next.js):** o agente (Groq com tool calling) e o motor de plano. Recebe do navegador o resumo por SKU (algumas centenas de KB) e executa as ferramentas sobre ele. Cenários ("BF +20%", "corta 200 mil") recalculam o plano na hora.
+2. **Servidor (rotas Next.js):** o agente (Claude Haiku com tool calling) e o motor de plano. Recebe do navegador o resumo por SKU (algumas centenas de KB) e executa as ferramentas sobre ele. Cenários ("BF +20%", "corta 200 mil") recalculam o plano na hora.
 3. **Navegador:** exibe, aprova/edita/recusa, exporta CSV.
 
 ### O agente — "o agente decide, o código calcula"
@@ -139,8 +139,8 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
   2. O agente recebe o resumo e trabalha **só nos casos críticos**, por meio de ferramentas: decide o que cortar e o que proteger quando o orçamento não cobre tudo, antecipa emissões, ajusta estoque de segurança de casos de risco. Cada ação passa pelo validador.
   3. A tela mostra **o que o agente mudou em relação ao plano base**: linha destacada, valor antes → depois, motivo citando os números das ferramentas, e um resumo no topo (quanto cortou, o que protegeu, nível de serviço estimado resultante).
   4. O usuário pede ajustes em linguagem natural ("BF 20% maior", "não corta nada da Kokeshi") e o agente refaz só o afetado.
-- Motivo: torna a ação do agente visível e rastreável para o avaliador, cabe no limite gratuito do Groq (dezenas de casos, não 441 SKUs) e reduz o risco de número errado.
-- **Plano B:** se o Groq cair ou estourar o limite, o sistema gera um **plano base por regra** (sem LLM). O agente melhora e explica, mas a ferramenta não depende dele para funcionar.
+- Motivo: torna a ação do agente visível e rastreável para o avaliador, mantém o contexto pequeno (dezenas de casos, não 441 SKUs) e reduz o risco de número errado.
+- **Plano B:** se o LLM cair ou estourar o limite, o sistema gera um **plano base por regra** (sem LLM). O agente melhora e explica, mas a ferramenta não depende dele para funcionar.
 
 ### Telas (escolha do usuário: "Painel B", diagnóstico primeiro)
 - **Visão geral (padrão):** 4 indicadores — capital em estoque, capital parado, venda perdida por ruptura, nível de serviço atual vs meta 98%. Dois gráficos funcionais: **cobertura em dias por SKU** (quem rompe antes da BF / quem tem excesso) e **curva caixa × nível de serviço**. Alertas: SKUs que rompem antes de 20/11, excesso, POs atrasados. Botão para gerar o plano com o agente.
@@ -164,7 +164,7 @@ F05 é imprevisível (cauda longa até 83 dias): pedidos para a BF precisam sair
 - **Nível de serviço padrão do plano:** o recomendado e diferenciado (98% para os SKUs de maior venda/margem, menor para a cauda). "98% para todos" é um cenário com um clique, que mostra o custo e o déficit de orçamento.
 - **Parâmetros após upload:** orçamento, data de referência, janela de emissão, calendário de campanhas, custos de capital/armazenagem e teto de desconto viram um objeto de configuração editável na tela, com os valores do parametros.md como padrão. Nada disso fica fixo no código.
 - **Caixa liberado na liquidação:** por padrão não aumenta o orçamento de compra (módulos separados). O valor aparece como informação, e existe um cenário opcional "reinvestir caixa liberado".
-- **Modelo Groq:** um modelo com bom suporte a tool calling (ex.: `llama-3.3-70b-versatile` ou `openai/gpt-oss-120b`); builder confirma disponibilidade.
+- **Modelo:** `claude-haiku-5-5` (configurável por `ANTHROPIC_MODEL`).
 
 ## 7. Deixado ao builder
 - Método exato de projeção (ex.: base recente por SKU com tendência + multiplicadores de BF/Natal medidos em 2025 relativos à base da época; fallback por categoria para SKUs com histórico curto), desde que documentado e defensável.
@@ -196,5 +196,5 @@ O que a implementação mudou ou revelou. Prevalece sobre as seções anteriores
 - **Curva da pergunta 5:** passa a ser orçamento → fill alcançável (`budgetCurve`). A curva por nível uniforme inclui a cobertura de janeiro e contradiz o plano real; fica só para estimar o custo de "98% para todos".
 - **Prioridade no orçamento:** conta só a demanda até o fim da janela (fill dentro do orçamento passou de 80,5% para 89,5%).
 - **Falha do LLM no meio da revisão:** os ajustes já validados são mantidos, com aviso "Revisão parcial". Sem ajustes, o plano base fica intacto.
-- **LLM:** o Groq gratuito limita 8.000 tokens/min e o `llama-3.3-70b-versatile` foi retirado. O agente foi redesenhado para ser econômico (contexto inicial pronto, ajustes em lote, histórico compacto, retentativas). **Pendente: migrar para Claude Haiku**, trocando só o adaptador `ChatClient`.
+- **LLM:** o Groq gratuito limita 8.000 tokens/min e o `llama-3.3-70b-versatile` foi retirado. O agente foi redesenhado para ser econômico (contexto inicial pronto, ajustes em lote, histórico compacto, retentativas). Em 28/10 o adaptador `ChatClient` passou para o Claude Haiku 5.5; o histórico compacto saiu, porque o thinking do Haiku exige histórico sem edição.
 - **Papel do agente na prática:** o plano base já é quase ótimo pela margem. O ganho do agente está no risco que o código não pesa, como antecipar emissões de fornecedor instável (P90) antes da campanha e proteger SKUs A que rompem antes da BF.

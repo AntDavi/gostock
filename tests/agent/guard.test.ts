@@ -35,4 +35,8 @@ describe("numberGuard", () => {
   });
   test("texto sem números", () => expect(numberGuard("Plano revisado.", [])).toEqual({ ok: true, unverified: [] }));
   test("toolLog com JSON inválido não quebra", () => expect(numberGuard("Custo 1.843.250,50", ["{oops", ...log]).ok).toBe(true));
+  test("decimal com ponto e mais de 3 casas não é lido como milhar", () => {
+    expect(numberGuard("fill esperado 0.8947", [JSON.stringify({ fill: 0.89470001 })]).ok).toBe(true);
+    expect(numberGuard("fill esperado 0.8947", [JSON.stringify({ fill: 0.5 })]).unverified).toEqual(["0.8947"]);
+  });
 });

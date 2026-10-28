@@ -11,7 +11,7 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 1. **O agente nunca inventa números.** Todo número na tela vem de função determinística. O agente só usa valores devolvidos por ferramentas e cita a origem. Se uma resposta do agente contém número que não veio de ferramenta, é bug.
 2. **Regras de negócio vivem no código, não no prompt.** Ficam no validador: múltiplo do MOQ na unidade de compra, conversão `cx 12 un` = 12 unidades, teto de orçamento, desconto ≤ 40%, sem recompra de descontinuado, emissão dentro da janela. A ferramenta recusa e devolve o motivo.
 3. **O código monta o plano base, o agente faz o julgamento.** O agente atua sobre os casos críticos (corte de orçamento, F05/lead time instável antes da BF, histórico curto, PO atrasado). A UI mostra o que ele mudou: antes → depois + motivo.
-4. **Funciona sem o LLM.** Se o Groq falhar, o plano base continua válido e visível. Nunca deixe a tela quebrar por erro do agente.
+4. **Funciona sem o LLM.** Se o LLM falhar, o plano base continua válido e visível. Nunca deixe a tela quebrar por erro do agente.
 5. **Dados confidenciais.** `case_estoque/` e `Desafio_AI-First_Gogroup.pdf` **nunca** vão para o git. O repo leva só agregados: histórico **semanal** por SKU, projeções e indicadores, sem custo/preço unitário cru. Histórico diário só via upload, só no navegador do usuário.
 6. **Gráfico só se apoiar uma decisão.** Visual sóbrio; cor só para estado (vermelho = ruptura, âmbar = excesso).
 
@@ -19,8 +19,8 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 
 - Next.js (App Router) + TypeScript `strict`, publicado no Vercel.
 - Tudo em TypeScript. O **pipeline de dados é um módulo puro e compartilhado**: roda em script local (dados padrão), em Web Worker no navegador (upload) e é consumido pelo servidor (agente/plano). Nada de I/O ou APIs de Node/DOM dentro do núcleo do pipeline.
-- LLM: atrás da interface `ChatClient` (`src/agent/run.ts`). Hoje o adaptador é o Groq (`GROQ_API_KEY`, `GROQ_MODEL`, padrão `openai/gpt-oss-120b`). **Decisão pendente: migrar para Claude Haiku** (`ANTHROPIC_API_KEY`), trocando só o adaptador. Chaves ficam só no servidor (`.env.local`, nunca no cliente, nunca commitadas).
-- Groq gratuito: 8.000 tokens/min e 1.000 requisições/dia em todos os modelos. `llama-3.3-70b-versatile` foi retirado. Por isso o agente economiza contexto (ver Arquitetura do agente).
+- LLM: atrás da interface `ChatClient` (`src/agent/run.ts`). O adaptador é o Claude Haiku 5.5 (`src/agent/claude.ts`, `@anthropic-ai/sdk`; `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, padrão `claude-haiku-5-5`, effort `medium`, thinking adaptativo). O Groq foi abandonado por limite de uso (8.000 tokens/min). Chaves ficam só no servidor (`.env.local`, nunca no cliente, nunca commitadas).
+- Haiku 5.5 rejeita `temperature`/`top_p`/`top_k` e prefill. Os blocos de thinking precisam voltar intactos (`ChatMessage.raw`) e o histórico não pode ser editado, senão a API responde 400.
 - Requisições ao servidor ≤ 4,5 MB (limite do Vercel). Por isso CSV bruto nunca vai ao servidor. O navegador manda o resumo por SKU.
 
 ## Arquitetura
@@ -28,7 +28,7 @@ Documento de problema e design (fonte da verdade sobre escopo e decisões): `doc
 ```
 CSVs ──► pipeline (puro, TS) ──► resumo por SKU (JSON)
           │                         │
-          ├ local: script → data/   ├ servidor: motor de plano + agente (Groq, tools) + validador
+          ├ local: script → data/   ├ servidor: motor de plano + agente (Claude, tools) + validador
           └ upload: Web Worker      └ navegador: Visão geral · Plano · Liquidação · Estoque · Fornecedores · Upload
 ```
 
@@ -43,8 +43,8 @@ Mapa do código:
 
 - **Contexto inicial calculado pelo código:** a 1ª mensagem já traz `resumo_plano` (com `candidatos_corte` e custo acumulado) e `listar_casos_criticos` (3 de cada tipo, com custo do lote, lead time mediano e P90, e as linhas do SKU).
 - **Ajustes em lote:** o agente faz os ajustes numa chamada de `aplicar_ajustes`. Dentro do lote, cortes e reduções são aplicados antes das adições. Depois chama `finalizar`.
-- **Histórico compacto:** resultados de ferramenta antigos são resumidos (os 4 últimos ficam completos).
-- **Erros do modelo:** 429 espera o "try again in Xs" dentro do prazo de 100 s. `400 tool_use_failed` (JSON malformado) tenta de novo até 2 vezes.
+- **Histórico só cresce:** nada é resumido nem editado (exigência do thinking e do cache de prompt, que fica ligado).
+- **Erros do modelo:** o SDK repete 429/5xx 2 vezes; depois disso o loop ainda espera o `retry-after` dentro do prazo de 100 s. Recusa (`stop_reason: refusal`) conta como falha do modelo.
 - **Falha no meio:** os ajustes já validados são mantidos com a mensagem "Revisão parcial", gerada pelo código. Sem nenhum ajuste, a rota responde `ok:false` e o plano base fica intacto.
 - **Guarda de números:** `numberGuard` confere cada número do resumo contra as saídas das ferramentas. A saída de `finalizar` não conta como fonte. Hífens tipográficos e milhar com espaço são normalizados.
 - **Onde está o valor:** o plano base já usa o orçamento de forma quase ótima pela margem. O ganho do agente está em risco que o código não pesa, como antecipar emissões quando a chegada pelo P90 do fornecedor cai depois do início da campanha.
@@ -113,7 +113,7 @@ Next.js 16 tem mudanças de API. Antes de escrever código Next, leia o guia rel
 ## Fluxo de trabalho
 
 - Ordem do projeto: design (feito) → CLAUDE.md (este) → plano de implementação (`docs/superpowers/plans/2026-10-27-gostock.md`) → aplicação → publicação.
-- Estado em 27/10: Tasks 1–11 completas. Task 12 implementada e testada com modelo simulado; a verificação com o LLM real está pausada até a troca de provedor. Próximas: troca para Claude Haiku, depois Tasks 13–17 (UI, upload, publicação).
+- Estado em 28/10: Tasks 1–11 completas. Task 12 migrada para Claude Haiku 5.5 e testada com modelo simulado; falta a verificação com o modelo real (`npx tsx .superpowers/agent-run.mts`, precisa de `ANTHROPIC_API_KEY` no `.env.local`). Próximas: Tasks 13–17 (UI, upload, publicação).
 - Push para o GitHub é feito pelo usuário (este ambiente não tem credencial).
 - Antes de dizer que algo está pronto: rode testes e build e confira na tela. Números da Visão geral devem bater com os do reconhecimento no documento de design (ex.: estoque a custo em 29/09 ≈ R$ 6,79 mi).
 - Commits só quando o usuário pedir.

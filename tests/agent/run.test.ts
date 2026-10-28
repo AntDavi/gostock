@@ -51,13 +51,12 @@ describe("runAgent", () => {
     expect(r.steps.slice(0, 2).map((x) => x.tool)).toEqual(["resumo_plano", "listar_casos_criticos"]);
   });
 
-  test("resultados de ferramenta antigos são resumidos no histórico", async () => {
-    const msgs = [...Array(7)].map(() => call("consultar_sku", { sku: "AAA-1" }));
+  test("histórico só cresce: cada chamada repete a anterior sem editar e devolve raw do assistente", async () => {
+    const msgs = [...Array(6)].map(() => ({ ...call("consultar_sku", { sku: "AAA-1" }), raw: [{ type: "thinking", thinking: "", signature: "s" }] }));
     const { client, requests } = scripted([...msgs, call("finalizar", { resumo: "ok" })]);
     await runAgent(createSession(ds), "x", client);
-    const last = requests.at(-1)!.filter((m) => m.role === "tool");
-    expect(last[0].content!.length).toBeLessThanOrEqual(320);
-    expect(last.at(-1)!.content!.length).toBeGreaterThan(320);
+    for (let i = 1; i < requests.length; i++) expect(requests[i].slice(0, requests[i - 1].length)).toEqual(requests[i - 1]);
+    expect(requests.at(-1)!.find((m) => m.role === "assistant")!.raw).toEqual(msgs[0].raw);
   });
 
   test("429 com 'try again in Xs' espera e tenta de novo", async () => {
@@ -75,23 +74,18 @@ describe("runAgent", () => {
     expect(waits[0]).toBeGreaterThanOrEqual(1500);
   });
 
-  test("400 tool_use_failed (JSON malformado do modelo) tenta de novo", async () => {
+  test("429 com cabeçalho retry-after (Headers) espera e tenta de novo", async () => {
     let i = 0;
+    const waits: number[] = [];
     const client: ChatClient = {
       async complete() {
-        if (i++ < 2) throw Object.assign(new Error('400 {"error":{"code":"tool_use_failed","message":"Failed to parse tool call arguments as JSON"}}'), { status: 400 });
+        if (i++ === 0) throw Object.assign(new Error("rate_limit_error"), { status: 429, headers: new Headers({ "retry-after": "2" }) });
         return call("finalizar", { resumo: "ok" });
       },
     };
-    const r = await runAgent(createSession(ds), "x", client, { sleep: async () => {} });
+    const r = await runAgent(createSession(ds), "x", client, { sleep: async (ms) => void waits.push(ms) });
     expect(r.ok).toBe(true);
-    expect(i).toBe(3);
-  });
-
-  test("400 tool_use_failed persistente → falha", async () => {
-    const client: ChatClient = { complete: async () => { throw Object.assign(new Error("tool_use_failed"), { status: 400 }); } };
-    const r = await runAgent(createSession(ds), "x", client, { sleep: async () => {} });
-    expect(r.ok).toBe(false);
+    expect(waits[0]).toBeGreaterThanOrEqual(2000);
   });
 
   test("429 cuja espera estoura o prazo → falha com mensagem de limite", async () => {
@@ -117,7 +111,7 @@ describe("runAgent", () => {
     expect(r.steps[2].ok).toBe(false);
   });
 
-  test("Groq 429 → ok:false, estado igual ao de entrada", async () => {
+  test("429 → ok:false, estado igual ao de entrada", async () => {
     const s = createSession(ds);
     const plan = s.plan;
     const r = await runAgent(s, "x", throwing(Object.assign(new Error("rate limit"), { status: 429 })));
