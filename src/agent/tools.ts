@@ -325,6 +325,7 @@ export function callTool(session: AgentSession, name: string, args: unknown): To
       out = { ok: false, result: null, error: e instanceof ToolError ? e.message : `Erro interno: ${(e as Error).message}` };
     }
   }
-  session.toolLog.push(JSON.stringify(out.ok ? out.result : { erro: out.error }));
+  // O resumo final não é fonte de números: senão o texto verificaria a si mesmo.
+  if (name !== "finalizar") session.toolLog.push(JSON.stringify(out.ok ? out.result : { erro: out.error }));
   return out;
 }

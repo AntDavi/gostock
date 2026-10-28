@@ -166,6 +166,12 @@ describe("callTool", () => {
     expect(res.casos[0].kind).toBe("stockout_before_campaign");
   });
 
+  test("finalizar não entra no toolLog (o resumo não pode verificar a si mesmo)", () => {
+    const s = fresh();
+    callTool(s, "finalizar", { resumo: "R$ 123" });
+    expect(s.toolLog).toEqual([]);
+  });
+
   test("toda saída de ferramenta vai para toolLog", () => {
     const s = fresh();
     callTool(s, "resumo_plano", {});
